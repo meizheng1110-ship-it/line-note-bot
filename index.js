@@ -42,11 +42,27 @@ async function handleEvent(event) {
   if (event.message.type !== "text") return;
 
   try {
-    const userText = event.message.text;
+    const userText = event.message.text.trim();
     const userId = event.source.userId;
 
-    if (userText === "查看提醒" || userText === "我的提醒") {
+    if (isListReminderIntent(userText)) {
       await listReminders(event.replyToken, userId);
+      return;
+    }
+
+    if (userText === "建立每日提醒") {
+      await reply(
+        event.replyToken,
+        "請輸入每日提醒，例如：\n\n每天早上8點提醒我吃藥\n每天晚上9點提醒我運動\n每天12點提醒我吃飯"
+      );
+      return;
+    }
+
+    if (userText === "如何刪除提醒") {
+      await reply(
+        event.replyToken,
+        "請先輸入「我的提醒」查看列表，然後輸入：\n\n刪除第1個提醒\n刪除第2個提醒"
+      );
       return;
     }
 
@@ -55,6 +71,7 @@ async function handleEvent(event) {
       await deleteReminder(event.replyToken, userId, Number(deleteMatch[1]));
       return;
     }
+
     const result =
       parseRelativeReminder(userText) ||
       parseDailyReminder(userText) ||
@@ -89,6 +106,28 @@ async function handleEvent(event) {
     console.error(error);
     await reply(event.replyToken, "解析提醒失敗，請再試一次");
   }
+}
+
+function isListReminderIntent(text) {
+  const keywords = [
+    "我的提醒",
+    "查看提醒",
+    "提醒列表",
+    "待辦",
+    "每日待辦",
+    "今天待辦",
+    "今天要做什麼",
+    "我今天要做什麼",
+    "今天有什麼事",
+    "今天有什麼提醒",
+    "我今天有什麼提醒",
+    "每天要做什麼",
+    "每日要做什麼",
+    "行程",
+    "我的行程",
+  ];
+
+  return keywords.some((keyword) => text.includes(keyword));
 }
 
 function parseRelativeReminder(text) {
@@ -193,7 +232,9 @@ async function parseReminder(text) {
 格式：
 {
   "title": "提醒事項",
-  "time": "2026-05-15T10:00:00+08:00"
+  "time": "2026-05-15T10:00:00+08:00",
+  "repeat_type": "none",
+  "repeat_time": null
 }
 
 規則：
@@ -210,14 +251,6 @@ async function parseReminder(text) {
 11. 如果完全沒有日期但有時間，預設今天；如果已經過了，改成明天。
 12. 如果時間真的無法判斷，time 回 null。
 13. 每日重複提醒請回 repeat_type: "daily"，否則 repeat_type: "none"。
-
-額外格式：
-{
-  "title": "提醒事項",
-  "time": "2026-05-15T10:00:00+08:00",
-  "repeat_type": "none",
-  "repeat_time": null
-}
         `,
       },
       {
