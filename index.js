@@ -45,6 +45,16 @@ async function handleEvent(event) {
     const userText = event.message.text;
     const userId = event.source.userId;
 
+    if (userText === "查看提醒" || userText === "我的提醒") {
+      await listReminders(event.replyToken, userId);
+      return;
+    }
+
+    const deleteMatch = userText.match(/刪除第(\d+)個提醒/);
+    if (deleteMatch) {
+      await deleteReminder(event.replyToken, userId, Number(deleteMatch[1]));
+      return;
+    }
     const result =
       parseRelativeReminder(userText) ||
       parseDailyReminder(userText) ||
@@ -225,6 +235,72 @@ async function parseReminder(text) {
   console.log(content);
 
   return JSON.parse(content);
+}
+
+async function listReminders(replyToken, userId) {
+  const { data, error } = await supabase
+    .from("reminders")
+    .select("*")
+    .eq("line_user_id", userId)
+    .eq("status", "scheduled")
+    .order("remind_at", { ascending: true })
+    .limit(10);
+
+  if (error) {
+    console.error(error);
+    await reply(replyToken, "查詢提醒失敗，請再試一次");
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    await reply(replyToken, "你目前沒有未完成提醒");
+    return;
+  }
+
+  const text = data
+    .map((item, index) => {
+      const repeatText = item.repeat_type === "daily" ? "（每天）" : "";
+      return `${index + 1}. ${item.title}${repeatText}\n時間：${item.remind_at}`;
+    })
+    .join("\n\n");
+
+  await reply(replyToken, `你的提醒：\n\n${text}\n\n要刪除請輸入：刪除第1個提醒`);
+}
+
+async function deleteReminder(replyToken, userId, number) {
+  const { data, error } = await supabase
+    .from("reminders")
+    .select("*")
+    .eq("line_user_id", userId)
+    .eq("status", "scheduled")
+    .order("remind_at", { ascending: true })
+    .limit(10);
+
+  if (error) {
+    console.error(error);
+    await reply(replyToken, "查詢提醒失敗，請再試一次");
+    return;
+  }
+
+  const target = data[number - 1];
+
+  if (!target) {
+    await reply(replyToken, "找不到這個提醒編號");
+    return;
+  }
+
+  const { error: updateError } = await supabase
+    .from("reminders")
+    .update({ status: "deleted" })
+    .eq("id", target.id);
+
+  if (updateError) {
+    console.error(updateError);
+    await reply(replyToken, "刪除失敗，請再試一次");
+    return;
+  }
+
+  await reply(replyToken, `已刪除提醒：${target.title}`);
 }
 
 async function reply(replyToken, text) {
