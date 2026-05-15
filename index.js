@@ -38,9 +38,15 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 async function handleEvent(event) {
-  if (event.type !== "message") return;
-  if (event.message.type !== "text") return;
+    if (isTodayReminderIntent(userText)) {
+    await listTodayReminders(event.replyToken, userId);
+    return;
+  }
 
+  if (isFutureReminderIntent(userText)) {
+    await listFutureReminders(event.replyToken, userId);
+    return;
+  }
   try {
     const userText = event.message.text.trim();
     const userId = event.source.userId;
@@ -129,7 +135,37 @@ function isListReminderIntent(text) {
 
   return keywords.some((keyword) => text.includes(keyword));
 }
+function isTodayReminderIntent(text) {
+  const keywords = [
+    "今天要做什麼",
+    "我今天要做什麼",
+    "今天有什麼事",
+    "今天有什麼提醒",
+    "我今天有什麼提醒",
+    "今天有什麼待辦",
+    "今日待辦",
+    "今天待辦",
+  ];
 
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function isFutureReminderIntent(text) {
+  const keywords = [
+    "我的提醒",
+    "查看提醒",
+    "提醒列表",
+    "未來提醒",
+    "接下來要做什麼",
+    "之後要做什麼",
+    "未來要做什麼",
+    "所有提醒",
+    "行程",
+    "我的行程",
+  ];
+
+  return keywords.some((keyword) => text.includes(keyword));
+}
 function parseRelativeReminder(text) {
   const minuteMatch = text.match(/(\d+)\s*分鐘後提醒我(.+)/);
   if (minuteMatch) {
@@ -269,24 +305,38 @@ async function parseReminder(text) {
 
   return JSON.parse(content);
 }
+async function listTodayReminders(replyToken, userId) {
+  const now = new Date();
 
-async function listReminders(replyToken, userId) {
+  const taipeiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const year = taipeiNow.getUTCFullYear();
+  const month = taipeiNow.getUTCMonth();
+  const day = taipeiNow.getUTCDate();
+
+  const startTaipei = new Date(Date.UTC(year, month, day, 0, 0, 0));
+  const endTaipei = new Date(Date.UTC(year, month, day + 1, 0, 0, 0));
+
+  const startUtc = new Date(startTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString();
+  const endUtc = new Date(endTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString();
+
   const { data, error } = await supabase
     .from("reminders")
     .select("*")
     .eq("line_user_id", userId)
     .eq("status", "scheduled")
+    .gte("remind_at", startUtc)
+    .lt("remind_at", endUtc)
     .order("remind_at", { ascending: true })
     .limit(10);
 
   if (error) {
     console.error(error);
-    await reply(replyToken, "查詢提醒失敗，請再試一次");
+    await reply(replyToken, "查詢今日待辦失敗，請再試一次");
     return;
   }
 
   if (!data || data.length === 0) {
-    await reply(replyToken, "你目前沒有未完成提醒");
+    await reply(replyToken, "你今天目前沒有待辦提醒");
     return;
   }
 
@@ -297,9 +347,40 @@ async function listReminders(replyToken, userId) {
     })
     .join("\n\n");
 
-  await reply(replyToken, `你的提醒：\n\n${text}\n\n要刪除請輸入：刪除第1個提醒`);
+  await reply(replyToken, `你今天的待辦：\n\n${text}`);
 }
+async function listFutureReminders(replyToken, userId) {
+  const now = new Date().toISOString();
 
+  const { data, error } = await supabase
+    .from("reminders")
+    .select("*")
+    .eq("line_user_id", userId)
+    .eq("status", "scheduled")
+    .gte("remind_at", now)
+    .order("remind_at", { ascending: true })
+    .limit(10);
+
+  if (error) {
+    console.error(error);
+    await reply(replyToken, "查詢提醒失敗，請再試一次");
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    await reply(replyToken, "你目前沒有未來提醒");
+    return;
+  }
+
+  const text = data
+    .map((item, index) => {
+      const repeatText = item.repeat_type === "daily" ? "（每天）" : "";
+      return `${index + 1}. ${item.title}${repeatText}\n時間：${item.remind_at}`;
+    })
+    .join("\n\n");
+
+  await reply(replyToken, `你的未來提醒：\n\n${text}\n\n要刪除請輸入：刪除第1個提醒`);
+}
 async function deleteReminder(replyToken, userId, number) {
   const { data, error } = await supabase
     .from("reminders")
