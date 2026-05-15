@@ -4,10 +4,10 @@ import dotenv from "dotenv";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 import cron from "node-cron";
+
 dotenv.config();
 
 console.log("NEW VERSION LOADED");
-dotenv.config();
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -28,6 +28,10 @@ const client = new line.messagingApi.MessagingApiClient({
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
 });
 
+app.get("/", (req, res) => {
+  res.send("LINE BOT RUNNING");
+});
+
 app.post("/webhook", line.middleware(config), async (req, res) => {
   await Promise.all(req.body.events.map(handleEvent));
   res.status(200).end();
@@ -41,10 +45,16 @@ async function handleEvent(event) {
     const userText = event.message.text;
     const userId = event.source.userId;
 
-    const result = parseRelativeReminder(userText) || await parseReminder(userText);
+    const result =
+      parseRelativeReminder(userText) ||
+      parseDailyReminder(userText) ||
+      await parseReminder(userText);
 
     if (!result.title || !result.time) {
-      await reply(event.replyToken, "我不太確定提醒時間，可以說：1分鐘後提醒我喝水，或明天早上10點提醒我開會");
+      await reply(
+        event.replyToken,
+        "我不太確定提醒時間，可以說：1分鐘後提醒我喝水，或每天早上8點提醒我吃藥"
+      );
       return;
     }
 
@@ -54,13 +64,16 @@ async function handleEvent(event) {
       title: result.title,
       remind_at: result.time,
       status: "scheduled",
+      repeat_type: result.repeat_type || "none",
+      repeat_time: result.repeat_time || null,
     });
 
     if (error) throw error;
 
     await reply(
       event.replyToken,
-      `已建立提醒 ✅\n提醒事項：${result.title}\n提醒時間：${result.time}`
+      `已建立提醒 ✅\n提醒事項：${result.title}\n提醒時間：${result.time}` +
+        (result.repeat_type === "daily" ? "\n重複：每天" : "")
     );
   } catch (error) {
     console.error(error);
@@ -73,9 +86,12 @@ function parseRelativeReminder(text) {
   if (minuteMatch) {
     const minutes = Number(minuteMatch[1]);
     const title = minuteMatch[2].trim();
+
     return {
       title,
       time: toTaipeiISOString(new Date(Date.now() + minutes * 60 * 1000)),
+      repeat_type: "none",
+      repeat_time: null,
     };
   }
 
@@ -83,13 +99,63 @@ function parseRelativeReminder(text) {
   if (hourMatch) {
     const hours = Number(hourMatch[1]);
     const title = hourMatch[2].trim();
+
     return {
       title,
       time: toTaipeiISOString(new Date(Date.now() + hours * 60 * 60 * 1000)),
+      repeat_type: "none",
+      repeat_time: null,
     };
   }
 
   return null;
+}
+
+function parseDailyReminder(text) {
+  const match = text.match(
+    /(?:每天|每日)(早上|上午|中午|下午|晚上)?\s*(\d{1,2})點(?:半)?提醒我(.+)/
+  );
+
+  if (!match) return null;
+
+  const period = match[1] || "";
+  let hour = Number(match[2]);
+  const minute = text.includes("半") ? 30 : 0;
+  const title = match[3].trim();
+
+  if ((period === "下午" || period === "晚上") && hour < 12) {
+    hour += 12;
+  }
+
+  if (period === "中午") {
+    hour = 12;
+  }
+
+  const remindAt = nextTaipeiTime(hour, minute);
+
+  return {
+    title,
+    time: toTaipeiISOString(remindAt),
+    repeat_type: "daily",
+    repeat_time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+  };
+}
+
+function nextTaipeiTime(hour, minute) {
+  const now = new Date();
+
+  const taipeiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const year = taipeiNow.getUTCFullYear();
+  const month = taipeiNow.getUTCMonth();
+  const day = taipeiNow.getUTCDate();
+
+  let targetTaipei = new Date(Date.UTC(year, month, day, hour, minute, 0));
+
+  if (targetTaipei <= taipeiNow) {
+    targetTaipei = new Date(targetTaipei.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  return new Date(targetTaipei.getTime() - 8 * 60 * 60 * 1000);
 }
 
 function toTaipeiISOString(date) {
@@ -133,6 +199,15 @@ async function parseReminder(text) {
 10. 如果只有「早上」沒有幾點，預設 09:00。
 11. 如果完全沒有日期但有時間，預設今天；如果已經過了，改成明天。
 12. 如果時間真的無法判斷，time 回 null。
+13. 每日重複提醒請回 repeat_type: "daily"，否則 repeat_type: "none"。
+
+額外格式：
+{
+  "title": "提醒事項",
+  "time": "2026-05-15T10:00:00+08:00",
+  "repeat_type": "none",
+  "repeat_time": null
+}
         `,
       },
       {
@@ -190,10 +265,23 @@ cron.schedule("* * * * *", async () => {
         ],
       });
 
-      await supabase
-        .from("reminders")
-        .update({ status: "reminded" })
-        .eq("id", reminder.id);
+      if (reminder.repeat_type === "daily") {
+        const [hour, minute] = reminder.repeat_time.split(":").map(Number);
+        const nextTime = nextTaipeiTime(hour, minute);
+
+        await supabase
+          .from("reminders")
+          .update({
+            remind_at: toTaipeiISOString(nextTime),
+            status: "scheduled",
+          })
+          .eq("id", reminder.id);
+      } else {
+        await supabase
+          .from("reminders")
+          .update({ status: "reminded" })
+          .eq("id", reminder.id);
+      }
 
       console.log("提醒已發送:", reminder.title);
     } catch (err) {
@@ -202,6 +290,8 @@ cron.schedule("* * * * *", async () => {
   }
 });
 
-app.listen(3000, () => {
-  console.log("LINE Bot is running");
+const port = process.env.PORT || 3000;
+
+app.listen(port, () => {
+  console.log(`LINE Bot is running on port ${port}`);
 });
