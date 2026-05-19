@@ -43,7 +43,7 @@ async function handleEvent(event) {
 
   try {
     const userText = event.message.text.trim();
-    const userId = event.source.userId;
+    const userId = event.source.groupId || event.source.userId;
 
     if (isTodayReminderIntent(userText)) {
       await listTodayReminders(event.replyToken, userId);
@@ -82,7 +82,7 @@ async function handleEvent(event) {
     if (userText === "使用說明") {
       await reply(
         event.replyToken,
-        "你可以這樣使用：\n\n1. 今日待辦\n2. 未來提醒\n3. 明天早上8點提醒我開會\n4. 3分鐘後提醒我喝水\n5. 十三分鐘後提醒我下班\n6. 兩小時後提醒我開會\n7. 三天後提醒我繳費\n8. 每天早上8點提醒我吃藥\n9. 刪除第1個提醒"
+        "你可以這樣使用：\n\n1. 今日待辦\n2. 未來提醒\n3. 明天早上8點提醒我開會\n4. 3分鐘後提醒我喝水\n5. 十三分鐘後提醒我下班\n6. 兩小時後提醒我開會\n7. 三天後提醒我繳費\n8. 每天早上8點提醒我吃藥\n9. 每週五下午5點提醒我交報告\n10. 每月4號提醒我要做安衛檢查表\n11. 刪除第1個提醒"
       );
       return;
     }
@@ -96,12 +96,14 @@ async function handleEvent(event) {
     const result =
       parseRelativeReminder(userText) ||
       parseDailyReminder(userText) ||
+      parseWeeklyReminder(userText) ||
+      parseMonthlyReminder(userText) ||
       await parseReminder(userText);
 
     if (!result.title || !result.time) {
       await reply(
         event.replyToken,
-        "我不太確定提醒時間，可以說：\n\n明天早上8點提醒我開會\n3分鐘後提醒我喝水\n兩小時後提醒我開會\n三天後提醒我繳費\n每天早上8點提醒我吃藥"
+        "我不太確定提醒時間，可以說：\n\n明天早上8點提醒我開會\n3分鐘後提醒我喝水\n兩小時後提醒我開會\n三天後提醒我繳費\n每天早上8點提醒我吃藥\n每週五提醒我交報告\n每月4號提醒我要做安衛檢查表"
       );
       return;
     }
@@ -114,6 +116,7 @@ async function handleEvent(event) {
       status: "scheduled",
       repeat_type: result.repeat_type || "none",
       repeat_time: result.repeat_time || null,
+      repeat_day: result.repeat_day || null,
     });
 
     if (error) throw error;
@@ -121,12 +124,19 @@ async function handleEvent(event) {
     await reply(
       event.replyToken,
       `已建立提醒 ✅\n提醒事項：${result.title}\n提醒時間：${formatTaipeiTime(result.time)}` +
-        (result.repeat_type === "daily" ? "\n重複：每天" : "")
+        getRepeatText(result)
     );
   } catch (error) {
     console.error(error);
     await reply(event.replyToken, "解析提醒失敗，請再試一次");
   }
+}
+
+function getRepeatText(result) {
+  if (result.repeat_type === "daily") return "\n重複：每天";
+  if (result.repeat_type === "weekly") return "\n重複：每週";
+  if (result.repeat_type === "monthly") return "\n重複：每月";
+  return "";
 }
 
 function isTodayReminderIntent(text) {
@@ -221,13 +231,9 @@ function parseRelativeReminder(text) {
 
   if (unit === "分鐘" || unit === "分") {
     milliseconds = amount * 60 * 1000;
-  }
-
-  if (unit === "小時" || unit === "鐘頭") {
+  } else if (unit === "小時" || unit === "鐘頭") {
     milliseconds = amount * 60 * 60 * 1000;
-  }
-
-  if (unit === "天" || unit === "日") {
+  } else if (unit === "天" || unit === "日") {
     milliseconds = amount * 24 * 60 * 60 * 1000;
   }
 
@@ -236,29 +242,25 @@ function parseRelativeReminder(text) {
     time: toTaipeiISOString(new Date(Date.now() + milliseconds)),
     repeat_type: "none",
     repeat_time: null,
+    repeat_day: null,
   };
 }
 
 function parseDailyReminder(text) {
   const match = text.match(
-    /(?:每天|每日)(早上|上午|中午|下午|晚上)?\s*(\d{1,2})點(?:半)?提醒我(.+)/
+    /(?:每天|每日)(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十]+)點(?:半)?(?:提醒我|跟我說|告訴我|叫我|提醒)?(.+)/
   );
 
   if (!match) return null;
 
   const period = match[1] || "";
-  let hour = Number(match[2]);
+  let hour = parseNumberText(match[2]);
   const minute = text.includes("半") ? 30 : 0;
   const title = match[3].trim();
 
-  if ((period === "下午" || period === "晚上") && hour < 12) {
-    hour += 12;
-  }
+  if (!hour || !title) return null;
 
-  if (period === "中午") {
-    hour = 12;
-  }
-
+  hour = convertTo24Hour(period, hour);
   const remindAt = nextTaipeiTime(hour, minute);
 
   return {
@@ -266,13 +268,98 @@ function parseDailyReminder(text) {
     time: toTaipeiISOString(remindAt),
     repeat_type: "daily",
     repeat_time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+    repeat_day: null,
   };
+}
+
+function parseWeeklyReminder(text) {
+  const match = text.match(
+    /(?:每週|每周|每星期|每禮拜)([一二三四五六日天1234567])(?:(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十]+)點(?:半)?)?(?:提醒我|跟我說|告訴我|叫我|提醒)?(.+)/
+  );
+
+  if (!match) return null;
+
+  const weekMap = {
+    一: 1,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    日: 0,
+    天: 0,
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5,
+    "6": 6,
+    "7": 0,
+  };
+
+  const repeatDay = weekMap[match[1]];
+  const period = match[2] || "";
+  let hour = match[3] ? parseNumberText(match[3]) : 9;
+  const minute = text.includes("半") ? 30 : 0;
+  const title = match[4].trim();
+
+  if (repeatDay === undefined || !hour || !title) return null;
+
+  hour = convertTo24Hour(period, hour);
+  const remindAt = nextWeeklyTime(repeatDay, hour, minute);
+
+  return {
+    title,
+    time: toTaipeiISOString(remindAt),
+    repeat_type: "weekly",
+    repeat_time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+    repeat_day: repeatDay,
+  };
+}
+
+function parseMonthlyReminder(text) {
+  const match = text.match(
+    /(?:每個月|每月)的?([0-9一二兩三四五六七八九十]+)\s*(?:號|日)(?:(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十]+)點(?:半)?)?(?:提醒我|跟我說|告訴我|叫我|提醒)?(.+)/
+  );
+
+  if (!match) return null;
+
+  const repeatDay = parseNumberText(match[1]);
+  const period = match[2] || "";
+  let hour = match[3] ? parseNumberText(match[3]) : 9;
+  const minute = text.includes("半") ? 30 : 0;
+  const title = match[4].trim();
+
+  if (!repeatDay || repeatDay < 1 || repeatDay > 31 || !hour || !title) return null;
+
+  hour = convertTo24Hour(period, hour);
+  const remindAt = nextMonthlyTime(repeatDay, hour, minute);
+
+  return {
+    title,
+    time: toTaipeiISOString(remindAt),
+    repeat_type: "monthly",
+    repeat_time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+    repeat_day: repeatDay,
+  };
+}
+
+function convertTo24Hour(period, hour) {
+  if ((period === "下午" || period === "晚上") && hour < 12) {
+    return hour + 12;
+  }
+
+  if (period === "中午") {
+    return 12;
+  }
+
+  return hour;
 }
 
 function nextTaipeiTime(hour, minute) {
   const now = new Date();
-
   const taipeiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+
   const year = taipeiNow.getUTCFullYear();
   const month = taipeiNow.getUTCMonth();
   const day = taipeiNow.getUTCDate();
@@ -281,6 +368,46 @@ function nextTaipeiTime(hour, minute) {
 
   if (targetTaipei <= taipeiNow) {
     targetTaipei = new Date(targetTaipei.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  return new Date(targetTaipei.getTime() - 8 * 60 * 60 * 1000);
+}
+
+function nextWeeklyTime(targetDay, hour, minute) {
+  const now = new Date();
+  const taipeiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+
+  const currentDay = taipeiNow.getUTCDay();
+  let addDays = targetDay - currentDay;
+
+  let targetTaipei = new Date(Date.UTC(
+    taipeiNow.getUTCFullYear(),
+    taipeiNow.getUTCMonth(),
+    taipeiNow.getUTCDate() + addDays,
+    hour,
+    minute,
+    0
+  ));
+
+  if (targetTaipei <= taipeiNow) {
+    targetTaipei = new Date(targetTaipei.getTime() + 7 * 24 * 60 * 60 * 1000);
+  }
+
+  return new Date(targetTaipei.getTime() - 8 * 60 * 60 * 1000);
+}
+
+function nextMonthlyTime(day, hour, minute) {
+  const now = new Date();
+  const taipeiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+
+  let year = taipeiNow.getUTCFullYear();
+  let month = taipeiNow.getUTCMonth();
+
+  let targetTaipei = new Date(Date.UTC(year, month, day, hour, minute, 0));
+
+  if (targetTaipei.getUTCMonth() !== month || targetTaipei <= taipeiNow) {
+    month += 1;
+    targetTaipei = new Date(Date.UTC(year, month, day, hour, minute, 0));
   }
 
   return new Date(targetTaipei.getTime() - 8 * 60 * 60 * 1000);
@@ -400,7 +527,10 @@ async function listTodayReminders(replyToken, userId) {
 
   const text = data
     .map((item, index) => {
-      const repeatText = item.repeat_type === "daily" ? "（每天）" : "";
+      const repeatText = item.repeat_type === "daily" ? "（每天）" :
+        item.repeat_type === "weekly" ? "（每週）" :
+        item.repeat_type === "monthly" ? "（每月）" : "";
+
       return `${index + 1}. ${item.title}${repeatText}\n時間：${formatTaipeiTime(item.remind_at)}`;
     })
     .join("\n\n");
@@ -433,7 +563,10 @@ async function listFutureReminders(replyToken, userId) {
 
   const text = data
     .map((item, index) => {
-      const repeatText = item.repeat_type === "daily" ? "（每天）" : "";
+      const repeatText = item.repeat_type === "daily" ? "（每天）" :
+        item.repeat_type === "weekly" ? "（每週）" :
+        item.repeat_type === "monthly" ? "（每月）" : "";
+
       return `${index + 1}. ${item.title}${repeatText}\n時間：${formatTaipeiTime(item.remind_at)}`;
     })
     .join("\n\n");
@@ -518,6 +651,28 @@ cron.schedule("* * * * *", async () => {
       if (reminder.repeat_type === "daily") {
         const [hour, minute] = reminder.repeat_time.split(":").map(Number);
         const nextTime = nextTaipeiTime(hour, minute);
+
+        await supabase
+          .from("reminders")
+          .update({
+            remind_at: toTaipeiISOString(nextTime),
+            status: "scheduled",
+          })
+          .eq("id", reminder.id);
+      } else if (reminder.repeat_type === "weekly") {
+        const [hour, minute] = reminder.repeat_time.split(":").map(Number);
+        const nextTime = nextWeeklyTime(reminder.repeat_day, hour, minute);
+
+        await supabase
+          .from("reminders")
+          .update({
+            remind_at: toTaipeiISOString(nextTime),
+            status: "scheduled",
+          })
+          .eq("id", reminder.id);
+      } else if (reminder.repeat_type === "monthly") {
+        const [hour, minute] = reminder.repeat_time.split(":").map(Number);
+        const nextTime = nextMonthlyTime(reminder.repeat_day, hour, minute);
 
         await supabase
           .from("reminders")
