@@ -87,9 +87,11 @@ async function handleEvent(event) {
       return;
     }
 
-    const deleteMatch = userText.match(/刪除第([0-9一二三四五六七八九十]+)個提醒/);
+    const deleteMatch = userText.match(/刪除第([0-9一二兩三四五六七八九十百]+)個提醒/);
+
     if (deleteMatch) {
-      await deleteReminder(event.replyToken, userId, Number(deleteMatch[1]));
+      const deleteNumber = parseNumberText(deleteMatch[1]);
+      await deleteReminder(event.replyToken, userId, deleteNumber);
       return;
     }
 
