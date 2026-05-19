@@ -74,7 +74,7 @@ async function handleEvent(event) {
     if (userText === "如何刪除提醒") {
       await reply(
         event.replyToken,
-        "請先輸入「未來提醒」查看列表，然後輸入：\n\n刪除第1個提醒\n刪除第2個提醒"
+        "請先輸入「今日待辦」或「未來提醒」查看列表，然後輸入：\n\n刪除今日第1個提醒\n刪除未來第1個提醒"
       );
       return;
     }
@@ -82,16 +82,28 @@ async function handleEvent(event) {
     if (userText === "使用說明") {
       await reply(
         event.replyToken,
-        "你可以這樣使用：\n\n1. 今日待辦\n2. 未來提醒\n3. 明天早上8點提醒我開會\n4. 3分鐘後提醒我喝水\n5. 十三分鐘後提醒我下班\n6. 兩小時後提醒我開會\n7. 三天後提醒我繳費\n8. 每天早上8點提醒我吃藥\n9. 每週五下午5點提醒我交報告\n10. 每月4號提醒我要做安衛檢查表\n11. 刪除第1個提醒"
+        "你可以這樣使用：\n\n1. 今日待辦\n2. 未來提醒\n3. 明天早上8點提醒我開會\n4. 3分鐘後提醒我喝水\n5. 十三分鐘後提醒我下班\n6. 兩小時後提醒我開會\n7. 三天後提醒我繳費\n8. 每天早上8點提醒我吃藥\n9. 每週五下午5點提醒我交報告\n10. 每月4號提醒我要做安衛檢查表\n11. 刪除今日第1個提醒\n12. 刪除未來第1個提醒"
       );
       return;
     }
 
-    const deleteMatch = userText.match(/刪除第([0-9一二兩三四五六七八九十百]+)個提醒/);
+    const deleteTodayMatch = userText.match(
+      /刪除今日第([0-9一二兩三四五六七八九十百]+)個提醒/
+    );
 
-    if (deleteMatch) {
-      const deleteNumber = parseNumberText(deleteMatch[1]);
-      await deleteReminder(event.replyToken, userId, deleteNumber);
+    if (deleteTodayMatch) {
+      const deleteNumber = parseNumberText(deleteTodayMatch[1]);
+      await deleteTodayReminder(event.replyToken, userId, deleteNumber);
+      return;
+    }
+
+    const deleteFutureMatch = userText.match(
+      /刪除未來第([0-9一二兩三四五六七八九十百]+)個提醒/
+    );
+
+    if (deleteFutureMatch) {
+      const deleteNumber = parseNumberText(deleteFutureMatch[1]);
+      await deleteFutureReminder(event.replyToken, userId, deleteNumber);
       return;
     }
 
@@ -422,6 +434,23 @@ function nextMonthlyTime(day, hour, minute) {
   return new Date(targetTaipei.getTime() - 8 * 60 * 60 * 1000);
 }
 
+function getTodayRangeUtc() {
+  const now = new Date();
+  const taipeiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+
+  const year = taipeiNow.getUTCFullYear();
+  const month = taipeiNow.getUTCMonth();
+  const day = taipeiNow.getUTCDate();
+
+  const startTaipei = new Date(Date.UTC(year, month, day, 0, 0, 0));
+  const endTaipei = new Date(Date.UTC(year, month, day + 1, 0, 0, 0));
+
+  return {
+    startUtc: new Date(startTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+    endUtc: new Date(endTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+  };
+}
+
 function toTaipeiISOString(date) {
   const taipeiTime = new Date(date.getTime() + 8 * 60 * 60 * 1000);
   return taipeiTime.toISOString().replace("Z", "+08:00");
@@ -500,18 +529,7 @@ async function parseReminder(text) {
 }
 
 async function listTodayReminders(replyToken, userId) {
-  const now = new Date();
-
-  const taipeiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-  const year = taipeiNow.getUTCFullYear();
-  const month = taipeiNow.getUTCMonth();
-  const day = taipeiNow.getUTCDate();
-
-  const startTaipei = new Date(Date.UTC(year, month, day, 0, 0, 0));
-  const endTaipei = new Date(Date.UTC(year, month, day + 1, 0, 0, 0));
-
-  const startUtc = new Date(startTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString();
-  const endUtc = new Date(endTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString();
+  const { startUtc, endUtc } = getTodayRangeUtc();
 
   const { data, error } = await supabase
     .from("reminders")
@@ -536,7 +554,8 @@ async function listTodayReminders(replyToken, userId) {
 
   const text = data
     .map((item, index) => {
-      const repeatText = item.repeat_type === "daily" ? "（每天）" :
+      const repeatText =
+        item.repeat_type === "daily" ? "（每天）" :
         item.repeat_type === "weekly" ? "（每週）" :
         item.repeat_type === "monthly" ? "（每月）" : "";
 
@@ -544,7 +563,7 @@ async function listTodayReminders(replyToken, userId) {
     })
     .join("\n\n");
 
-  await reply(replyToken, `你今天的待辦：\n\n${text}`);
+  await reply(replyToken, `你今天的待辦：\n\n${text}\n\n要刪除請輸入：刪除今日第1個提醒`);
 }
 
 async function listFutureReminders(replyToken, userId) {
@@ -572,7 +591,8 @@ async function listFutureReminders(replyToken, userId) {
 
   const text = data
     .map((item, index) => {
-      const repeatText = item.repeat_type === "daily" ? "（每天）" :
+      const repeatText =
+        item.repeat_type === "daily" ? "（每天）" :
         item.repeat_type === "weekly" ? "（每週）" :
         item.repeat_type === "monthly" ? "（每月）" : "";
 
@@ -580,28 +600,32 @@ async function listFutureReminders(replyToken, userId) {
     })
     .join("\n\n");
 
-  await reply(replyToken, `你的未來提醒：\n\n${text}\n\n要刪除請輸入：刪除第1個提醒`);
+  await reply(replyToken, `你的未來提醒：\n\n${text}\n\n要刪除請輸入：刪除未來第1個提醒`);
 }
 
-async function deleteReminder(replyToken, userId, number) {
+async function deleteTodayReminder(replyToken, userId, number) {
+  const { startUtc, endUtc } = getTodayRangeUtc();
+
   const { data, error } = await supabase
     .from("reminders")
     .select("*")
     .eq("line_user_id", userId)
     .eq("status", "scheduled")
+    .gte("remind_at", startUtc)
+    .lt("remind_at", endUtc)
     .order("remind_at", { ascending: true })
     .limit(10);
 
   if (error) {
     console.error(error);
-    await reply(replyToken, "查詢提醒失敗，請再試一次");
+    await reply(replyToken, "查詢今日提醒失敗，請再試一次");
     return;
   }
 
-  const target = data[number - 1];
+  const target = data?.[number - 1];
 
   if (!target) {
-    await reply(replyToken, "找不到這個提醒編號");
+    await reply(replyToken, "找不到這個今日提醒編號");
     return;
   }
 
@@ -612,11 +636,50 @@ async function deleteReminder(replyToken, userId, number) {
 
   if (updateError) {
     console.error(updateError);
-    await reply(replyToken, "刪除失敗，請再試一次");
+    await reply(replyToken, "刪除今日提醒失敗，請再試一次");
     return;
   }
 
-  await reply(replyToken, `已刪除提醒：${target.title}`);
+  await reply(replyToken, `已刪除今日提醒：${target.title}`);
+}
+
+async function deleteFutureReminder(replyToken, userId, number) {
+  const now = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from("reminders")
+    .select("*")
+    .eq("line_user_id", userId)
+    .eq("status", "scheduled")
+    .gte("remind_at", now)
+    .order("remind_at", { ascending: true })
+    .limit(10);
+
+  if (error) {
+    console.error(error);
+    await reply(replyToken, "查詢未來提醒失敗，請再試一次");
+    return;
+  }
+
+  const target = data?.[number - 1];
+
+  if (!target) {
+    await reply(replyToken, "找不到這個未來提醒編號");
+    return;
+  }
+
+  const { error: updateError } = await supabase
+    .from("reminders")
+    .update({ status: "deleted" })
+    .eq("id", target.id);
+
+  if (updateError) {
+    console.error(updateError);
+    await reply(replyToken, "刪除未來提醒失敗，請再試一次");
+    return;
+  }
+
+  await reply(replyToken, `已刪除未來提醒：${target.title}`);
 }
 
 async function reply(replyToken, text) {
