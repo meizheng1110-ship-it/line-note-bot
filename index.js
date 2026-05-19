@@ -87,7 +87,7 @@ async function handleEvent(event) {
       return;
     }
 
-    const deleteMatch = userText.match(/刪除第(\d+)個提醒/);
+    const deleteMatch = userText.match(/刪除第([0-9一二三四五六七八九十]+)個提醒/);
     if (deleteMatch) {
       await deleteReminder(event.replyToken, userId, Number(deleteMatch[1]));
       return;
@@ -248,17 +248,24 @@ function parseRelativeReminder(text) {
 
 function parseDailyReminder(text) {
   const match = text.match(
-    /(?:每天|每日)(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十]+)點(?:半)?(?:提醒我|跟我說|告訴我|叫我|提醒)?(.+)/
+    /(?:每天|每日)(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十]+)點(?:(半)|([0-9一二兩三四五六七八九十]+)分?)?(?:提醒我|跟我說|告訴我|叫我|提醒)?(.+)/
   );
 
   if (!match) return null;
 
   const period = match[1] || "";
   let hour = parseNumberText(match[2]);
-  const minute = text.includes("半") ? 30 : 0;
-  const title = match[3].trim();
 
-  if (!hour || !title) return null;
+  let minute = 0;
+  if (match[3]) {
+    minute = 30;
+  } else if (match[4]) {
+    minute = parseNumberText(match[4]);
+  }
+
+  const title = match[5].trim();
+
+  if (!hour || title.length === 0) return null;
 
   hour = convertTo24Hour(period, hour);
   const remindAt = nextTaipeiTime(hour, minute);
