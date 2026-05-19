@@ -58,7 +58,7 @@ async function handleEvent(event) {
     if (userText === "建立提醒") {
       await reply(
         event.replyToken,
-        "請輸入提醒，例如：\n\n明天早上8點提醒我開會\n今天下午5點提醒我下班\n3分鐘後提醒我喝水"
+        "請輸入提醒，例如：\n\n明天早上8點提醒我開會\n今天下午5點提醒我下班\n3分鐘後提醒我喝水\n兩小時後提醒我開會\n三天後提醒我繳費"
       );
       return;
     }
@@ -82,7 +82,7 @@ async function handleEvent(event) {
     if (userText === "使用說明") {
       await reply(
         event.replyToken,
-        "你可以這樣使用：\n\n1. 今日待辦\n2. 未來提醒\n3. 明天早上8點提醒我開會\n4. 3分鐘後提醒我喝水\n5. 每天早上8點提醒我吃藥\n6. 刪除第1個提醒"
+        "你可以這樣使用：\n\n1. 今日待辦\n2. 未來提醒\n3. 明天早上8點提醒我開會\n4. 3分鐘後提醒我喝水\n5. 十三分鐘後提醒我下班\n6. 兩小時後提醒我開會\n7. 三天後提醒我繳費\n8. 每天早上8點提醒我吃藥\n9. 刪除第1個提醒"
       );
       return;
     }
@@ -101,7 +101,7 @@ async function handleEvent(event) {
     if (!result.title || !result.time) {
       await reply(
         event.replyToken,
-        "我不太確定提醒時間，可以說：\n\n明天早上8點提醒我開會\n3分鐘後提醒我喝水\n每天早上8點提醒我吃藥"
+        "我不太確定提醒時間，可以說：\n\n明天早上8點提醒我開會\n3分鐘後提醒我喝水\n兩小時後提醒我開會\n三天後提醒我繳費\n每天早上8點提醒我吃藥"
       );
       return;
     }
@@ -164,34 +164,79 @@ function isFutureReminderIntent(text) {
   return keywords.some((keyword) => text.includes(keyword));
 }
 
+function chineseNumberToInt(text) {
+  const map = {
+    零: 0,
+    一: 1,
+    二: 2,
+    兩: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+  };
+
+  if (/^\d+$/.test(text)) return Number(text);
+
+  if (text === "十") return 10;
+
+  if (text.includes("百")) {
+    const [hundredPart, restPart = ""] = text.split("百");
+    const hundred = (map[hundredPart] || 1) * 100;
+    return hundred + (restPart ? chineseNumberToInt(restPart) : 0);
+  }
+
+  if (text.includes("十")) {
+    const [tenPart, onePart = ""] = text.split("十");
+    const ten = tenPart === "" ? 10 : map[tenPart] * 10;
+    const one = onePart === "" ? 0 : map[onePart];
+    return ten + one;
+  }
+
+  return map[text] ?? null;
+}
+
+function parseNumberText(text) {
+  if (/^\d+$/.test(text)) return Number(text);
+  return chineseNumberToInt(text);
+}
+
 function parseRelativeReminder(text) {
-  const minuteMatch = text.match(/(\d+)\s*分鐘後提醒我(.+)/);
-  if (minuteMatch) {
-    const minutes = Number(minuteMatch[1]);
-    const title = minuteMatch[2].trim();
+  const match = text.match(
+    /([0-9一二兩三四五六七八九十百]+)\s*(分鐘|分|小時|鐘頭|天|日)後(?:提醒我|跟我說|告訴我|叫我|提醒)?(.+)/
+  );
 
-    return {
-      title,
-      time: toTaipeiISOString(new Date(Date.now() + minutes * 60 * 1000)),
-      repeat_type: "none",
-      repeat_time: null,
-    };
+  if (!match) return null;
+
+  const amount = parseNumberText(match[1]);
+  const unit = match[2];
+  const title = match[3].trim();
+
+  if (!amount || !title) return null;
+
+  let milliseconds = 0;
+
+  if (unit === "分鐘" || unit === "分") {
+    milliseconds = amount * 60 * 1000;
   }
 
-  const hourMatch = text.match(/(\d+)\s*小時後提醒我(.+)/);
-  if (hourMatch) {
-    const hours = Number(hourMatch[1]);
-    const title = hourMatch[2].trim();
-
-    return {
-      title,
-      time: toTaipeiISOString(new Date(Date.now() + hours * 60 * 60 * 1000)),
-      repeat_type: "none",
-      repeat_time: null,
-    };
+  if (unit === "小時" || unit === "鐘頭") {
+    milliseconds = amount * 60 * 60 * 1000;
   }
 
-  return null;
+  if (unit === "天" || unit === "日") {
+    milliseconds = amount * 24 * 60 * 60 * 1000;
+  }
+
+  return {
+    title,
+    time: toTaipeiISOString(new Date(Date.now() + milliseconds)),
+    repeat_type: "none",
+    repeat_time: null,
+  };
 }
 
 function parseDailyReminder(text) {
