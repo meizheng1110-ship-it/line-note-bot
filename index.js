@@ -88,21 +88,21 @@ async function handleEvent(event) {
     }
 
     const deleteTodayMatch = userText.match(
-      /刪除今日第([0-9一二兩三四五六七八九十百]+)個提醒/
+      /(刪除|刪掉|移除|取消)(今天|今日)?第?([0-9一二兩三四五六七八九十百]+)(個)?(提醒|待辦)?/
     );
 
     if (deleteTodayMatch) {
-      const deleteNumber = parseNumberText(deleteTodayMatch[1]);
+      const deleteNumber = parseNumberText(deleteTodayMatch[3]);
       await deleteTodayReminder(event.replyToken, userId, deleteNumber);
       return;
     }
 
     const deleteFutureMatch = userText.match(
-      /刪除未來第([0-9一二兩三四五六七八九十百]+)個提醒/
+      /(刪除|刪掉|移除|取消)(未來)?第?([0-9一二兩三四五六七八九十百]+)(個)?(提醒|待辦)?/
     );
 
     if (deleteFutureMatch) {
-      const deleteNumber = parseNumberText(deleteFutureMatch[1]);
+      const deleteNumber = parseNumberText(deleteFutureMatch[3]);
       await deleteFutureReminder(event.replyToken, userId, deleteNumber);
       return;
     }
@@ -260,9 +260,15 @@ function parseRelativeReminder(text) {
   };
 }
 
+function cleanReminderTitle(title) {
+  return title
+    .trim()
+    .replace(/^(提醒我|跟我說|告訴我|叫我|提醒|要|幫我|請我)/, "")
+    .trim();
+}
 function parseDailyReminder(text) {
   const match = text.match(
-    /(?:每天|每日)(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十]+)點(?:(半)|([0-9一二兩三四五六七八九十]+)分?)?(?:提醒我|跟我說|告訴我|叫我|提醒)?(.+)/
+    /(?:每天|每日)\s*(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十百]+)\s*點\s*(?:(半)|([0-9一二兩三四五六七八九十百]+)\s*分?)?\s*(.*)/
   );
 
   if (!match) return null;
@@ -277,11 +283,13 @@ function parseDailyReminder(text) {
     minute = parseNumberText(match[4]);
   }
 
-  const title = match[5].trim();
+  const title = cleanReminderTitle(match[5]);
 
-  if (!hour || title.length === 0) return null;
+  if (hour === null || hour === undefined || !title) return null;
+  if (minute === null || minute === undefined) return null;
 
   hour = convertTo24Hour(period, hour);
+
   const remindAt = nextTaipeiTime(hour, minute);
 
   return {
@@ -295,7 +303,7 @@ function parseDailyReminder(text) {
 
 function parseWeeklyReminder(text) {
   const match = text.match(
-    /(?:每週|每周|每星期|每禮拜)([一二三四五六日天1234567])(?:(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十]+)點(?:半)?)?(?:提醒我|跟我說|告訴我|叫我|提醒)?(.+)/
+    /(?:每週|每周|每星期|每禮拜)\s*([一二三四五六日天1234567])\s*(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十百]+)?\s*點?\s*(?:(半)|([0-9一二兩三四五六七八九十百]+)\s*分?)?\s*(.*)/
   );
 
   if (!match) return null;
@@ -321,12 +329,21 @@ function parseWeeklyReminder(text) {
   const repeatDay = weekMap[match[1]];
   const period = match[2] || "";
   let hour = match[3] ? parseNumberText(match[3]) : 9;
-  const minute = text.includes("半") ? 30 : 0;
-  const title = match[4].trim();
 
-  if (repeatDay === undefined || !hour || !title) return null;
+  let minute = 0;
+  if (match[4]) {
+    minute = 30;
+  } else if (match[5]) {
+    minute = parseNumberText(match[5]);
+  }
+
+  const title = cleanReminderTitle(match[6]);
+
+  if (repeatDay === undefined || hour === null || hour === undefined || !title) return null;
+  if (minute === null || minute === undefined) return null;
 
   hour = convertTo24Hour(period, hour);
+
   const remindAt = nextWeeklyTime(repeatDay, hour, minute);
 
   return {
@@ -340,7 +357,7 @@ function parseWeeklyReminder(text) {
 
 function parseMonthlyReminder(text) {
   const match = text.match(
-    /(?:每個月|每月)的?([0-9一二兩三四五六七八九十]+)\s*(?:號|日)(?:(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十]+)點(?:半)?)?(?:提醒我|跟我說|告訴我|叫我|提醒)?(.+)/
+    /(?:每個月|每月)\s*的?\s*([0-9一二兩三四五六七八九十百]+)\s*(?:號|日)?\s*(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十百]+)?\s*點?\s*(?:(半)|([0-9一二兩三四五六七八九十百]+)\s*分?)?\s*(.*)/
   );
 
   if (!match) return null;
@@ -348,12 +365,22 @@ function parseMonthlyReminder(text) {
   const repeatDay = parseNumberText(match[1]);
   const period = match[2] || "";
   let hour = match[3] ? parseNumberText(match[3]) : 9;
-  const minute = text.includes("半") ? 30 : 0;
-  const title = match[4].trim();
 
-  if (!repeatDay || repeatDay < 1 || repeatDay > 31 || !hour || !title) return null;
+  let minute = 0;
+  if (match[4]) {
+    minute = 30;
+  } else if (match[5]) {
+    minute = parseNumberText(match[5]);
+  }
+
+  const title = cleanReminderTitle(match[6]);
+
+  if (!repeatDay || repeatDay < 1 || repeatDay > 31) return null;
+  if (hour === null || hour === undefined || !title) return null;
+  if (minute === null || minute === undefined) return null;
 
   hour = convertTo24Hour(period, hour);
+
   const remindAt = nextMonthlyTime(repeatDay, hour, minute);
 
   return {
@@ -378,12 +405,7 @@ function convertTo24Hour(period, hour) {
 }
 
 function nextTaipeiTime(hour, minute) {
-  const now = new Date(
-  Date.now() + 8 * 60 * 60 * 1000
-)
-  .toISOString()
-  .replace("Z", "+08:00");
-  const taipeiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const taipeiNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
 
   const year = taipeiNow.getUTCFullYear();
   const month = taipeiNow.getUTCMonth();
@@ -724,28 +746,14 @@ cron.schedule("*/15 * * * * *", async () => {
       try {
 
         // 防止重複發送
-        const { data: lockedReminder, error: lockError } =
-          await supabase
-            .from("reminders")
-            .update({
-              status: "processing",
-            })
-            .eq("id", reminder.id)
-            .eq("status", "scheduled")
-            .select();
+        
 
-        if (lockError) {
-          console.error(lockError);
-          continue;
-        }
-
-        if (!lockedReminder || lockedReminder.length === 0) {
-          continue;
-        }
-        if (!lockedReminder) {
-          continue;
-        }
-
+        await supabase
+          .from("reminders")
+          .update({
+            status: "reminded",
+          })
+          .eq("id", reminder.id);
         await client.pushMessage({
           to: reminder.line_user_id,
           messages: [
@@ -764,15 +772,16 @@ cron.schedule("*/15 * * * * *", async () => {
 
           const nextTime = nextTaipeiTime(hour, minute);
 
-          const { error: remindedError } = await supabase
+          const { error: updateError } = await supabase
             .from("reminders")
             .update({
-              status: "reminded",
+              remind_at: toTaipeiISOString(nextTime),
+              status: "scheduled",
             })
             .eq("id", reminder.id);
 
-          if (remindedError) {
-            console.error(remindedError);
+          if (updateError) {
+            console.error(updateError);
           }
 
         // 每週提醒
