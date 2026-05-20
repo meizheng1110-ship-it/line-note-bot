@@ -656,7 +656,7 @@ function formatWorkReports(data, title) {
 
 async function listWorkReports(replyToken, event, text) {
   const lineUserId = getCurrentLineUserId(event);
-  const isAll = text.includes("所有");
+  const isAll = true;
   const isWeek = text.includes("週") || text.includes("這週");
 
   const range = isWeek ? getThisWeekRangeUtc() : getTaipeiRange(0);
