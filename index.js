@@ -46,7 +46,7 @@ async function handleEvent(event) {
   try {
     const userText = event.message.text.trim();
     const userId = event.source.groupId || event.source.userId;
-    if (userText.startsWith("綁定EMM")) {
+    if (/^綁定\s*EMM/i.test(userText)) {
       await bindEmmAccount(event.replyToken, userId, userText);
       return;
     }
