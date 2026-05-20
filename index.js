@@ -50,7 +50,7 @@ async function handleEvent(event) {
       return;
     }
 
-    if (/^選[0-9一二兩三四五六七八九十百]+$/.test(userText)) {
+    if (/^(選)?[0-9一二兩三四五六七八九十百]+$/.test(userText)) {
       await createWorkReportFromSelectedTemplate(event.replyToken, event, userText);
       return;
     }
@@ -58,7 +58,15 @@ async function handleEvent(event) {
       await showWorkReportMenu(event.replyToken);
       return;
     }
+    if (userText.startsWith("刪除模板")) {
+      await showDeleteWorkReportTemplates(event.replyToken, event, userText);
+      return;
+    }
 
+    if (/^刪除[0-9一二兩三四五六七八九十百]+$/.test(userText)) {
+      await deleteSelectedWorkReportTemplate(event.replyToken, event, userText);
+      return;
+    }
     const workReport = parseWorkReport(userText);
 
     if (workReport) {
@@ -419,15 +427,81 @@ ${text}
   );
 }
 
-async function createWorkReportFromSelectedTemplate(replyToken, event, text) {
+async function showDeleteWorkReportTemplates(replyToken, event, text) {
+  const match = text.match(
+    /^刪除模板\s*(安衛內業檢查|工作抽查|會勘|中分局會議|請假|其他)$/
+  );
+
+  if (!match) {
+    await reply(
+      replyToken,
+      `請輸入要刪除哪一類模板，例如：
+
+刪除模板 工作抽查
+
+可用類型：
+安衛內業檢查
+工作抽查
+會勘
+中分局會議
+請假
+其他`
+    );
+    return;
+  }
+
+  const type = match[1];
   const lineUserId = getCurrentLineUserId(event);
-  const numberText = text.replace("選", "").trim();
+
+  const { data, error } = await supabase
+    .from("work_report_templates")
+    .select("*")
+    .eq("line_user_id", lineUserId)
+    .eq("type", type)
+    .order("created_at", { ascending: true })
+    .limit(20);
+
+  if (error) {
+    console.error("LIST DELETE TEMPLATE ERROR:", error);
+    await reply(replyToken, "查詢模板失敗，請再試一次");
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    await reply(replyToken, `你目前沒有「${type}」模板可以刪除`);
+    return;
+  }
+
+  global.deleteTemplateCache = global.deleteTemplateCache || {};
+
+  global.deleteTemplateCache[lineUserId] = {
+    type,
+    templates: data,
+  };
+
+  const listText = data
+    .map((item, index) => `${index + 1}. ${item.content}`)
+    .join("\n");
+
+  await reply(
+    replyToken,
+    `請選擇要刪除的「${type}」模板：
+
+${listText}
+
+請輸入：刪除1`
+  );
+}
+
+async function deleteSelectedWorkReportTemplate(replyToken, event, text) {
+  const lineUserId = getCurrentLineUserId(event);
+  const numberText = text.replace("刪除", "").trim();
   const selectedNumber = parseNumberText(numberText);
 
-  const cache = global.workTemplateCache?.[lineUserId];
+  const cache = global.deleteTemplateCache?.[lineUserId];
 
   if (!cache || !cache.templates || cache.templates.length === 0) {
-    await reply(replyToken, "找不到可選的模板，請先輸入回報類型，例如：工作抽查");
+    await reply(replyToken, "找不到可刪除的模板，請先輸入：刪除模板 工作抽查");
     return;
   }
 
@@ -438,12 +512,26 @@ async function createWorkReportFromSelectedTemplate(replyToken, event, text) {
     return;
   }
 
-  await createWorkReport(replyToken, event, {
-    type: cache.type,
-    content: selectedTemplate.content,
-  });
+  const { error } = await supabase
+    .from("work_report_templates")
+    .delete()
+    .eq("id", selectedTemplate.id)
+    .eq("line_user_id", lineUserId);
 
-  delete global.workTemplateCache[lineUserId];
+  if (error) {
+    console.error("DELETE TEMPLATE ERROR:", error);
+    await reply(replyToken, "刪除模板失敗，請再試一次");
+    return;
+  }
+
+  delete global.deleteTemplateCache[lineUserId];
+
+  await reply(
+    replyToken,
+    `已刪除模板 ✅
+類型：${cache.type}
+內容：${selectedTemplate.content}`
+  );
 }
 
 function getTaipeiRange(daysBack = 0) {
