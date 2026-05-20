@@ -373,6 +373,33 @@ async function createWorkReportTemplate(replyToken, event, text) {
   );
 }
 
+async function createWorkReportFromSelectedTemplate(replyToken, event, text) {
+  const lineUserId = getCurrentLineUserId(event);
+  const numberText = text.replace("選", "").trim();
+  const selectedNumber = parseNumberText(numberText);
+
+  const cache = global.workTemplateCache?.[lineUserId];
+
+  if (!cache || !cache.templates || cache.templates.length === 0) {
+    await reply(replyToken, "找不到可選的模板，請先輸入回報類型，例如：工作抽查");
+    return;
+  }
+
+  const selectedTemplate = cache.templates[selectedNumber - 1];
+
+  if (!selectedTemplate) {
+    await reply(replyToken, "找不到這個模板編號，請重新選擇");
+    return;
+  }
+
+  await createWorkReport(replyToken, event, {
+    type: cache.type,
+    content: selectedTemplate.content,
+  });
+
+  delete global.workTemplateCache[lineUserId];
+}
+
 async function showWorkReportTemplates(replyToken, event, type) {
   const lineUserId = getCurrentLineUserId(event);
 
@@ -426,6 +453,8 @@ ${text}
 請輸入：選1`
   );
 }
+
+
 
 async function showDeleteWorkReportTemplates(replyToken, event, text) {
   const match = text.match(
