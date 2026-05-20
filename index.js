@@ -378,7 +378,11 @@ function convertTo24Hour(period, hour) {
 }
 
 function nextTaipeiTime(hour, minute) {
-  const now = new Date();
+  const now = new Date(
+  Date.now() + 8 * 60 * 60 * 1000
+)
+  .toISOString()
+  .replace("Z", "+08:00");
   const taipeiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
 
   const year = taipeiNow.getUTCFullYear();
@@ -694,76 +698,144 @@ async function reply(replyToken, text) {
   });
 }
 
-cron.schedule("* * * * *", async () => {
-  const now = new Date().toISOString();
+cron.schedule("*/15 * * * * *", async () => {
+  try {
+    const now = new Date().toISOString();
 
-  const { data, error } = await supabase
-    .from("reminders")
-    .select("*")
-    .lte("remind_at", now)
-    .eq("status", "scheduled");
+    // 往前補抓10分鐘，避免漏提醒
+    const lookback = new Date(
+      Date.now() - 10 * 60 * 1000
+    ).toISOString();
 
-  if (error) {
-    console.error("REMINDER CHECK ERROR:", error);
-    return;
-  }
+    const { data, error } = await supabase
+      .from("reminders")
+      .select("*")
+      .eq("status", "scheduled")
+      .lte("remind_at", now)
+      .gte("remind_at", lookback)
+      .order("remind_at", { ascending: true });
 
-  for (const reminder of data || []) {
-    try {
-      await client.pushMessage({
-        to: reminder.line_user_id,
-        messages: [
-          {
-            type: "text",
-            text: `提醒你：${reminder.title}`,
-          },
-        ],
-      });
+    if (error) {
+      console.error("REMINDER CHECK ERROR:", error);
+      return;
+    }
 
-      if (reminder.repeat_type === "daily") {
-        const [hour, minute] = reminder.repeat_time.split(":").map(Number);
-        const nextTime = nextTaipeiTime(hour, minute);
+    for (const reminder of data || []) {
+      try {
 
+        // 防止重複發送
+        const { data: lockedReminder } = await supabase
+          .from("reminders")
+          .update({
+            status: "processing",
+          })
+          .eq("id", reminder.id)
+          .eq("status", "scheduled")
+          .select()
+          .single();
+
+        if (!lockedReminder) {
+          continue;
+        }
+
+        await client.pushMessage({
+          to: reminder.line_user_id,
+          messages: [
+            {
+              type: "text",
+              text: `提醒你：${reminder.title}`,
+            },
+          ],
+        });
+
+        // 每日提醒
+        if (reminder.repeat_type === "daily") {
+
+          const [hour, minute] =
+            reminder.repeat_time.split(":").map(Number);
+
+          const nextTime = nextTaipeiTime(hour, minute);
+
+          await supabase
+            .from("reminders")
+            .update({
+              remind_at: toTaipeiISOString(nextTime),
+              status: "scheduled",
+            })
+            .eq("id", reminder.id);
+
+        // 每週提醒
+        } else if (reminder.repeat_type === "weekly") {
+
+          const [hour, minute] =
+            reminder.repeat_time.split(":").map(Number);
+
+          const nextTime = nextWeeklyTime(
+            reminder.repeat_day,
+            hour,
+            minute
+          );
+
+          await supabase
+            .from("reminders")
+            .update({
+              remind_at: toTaipeiISOString(nextTime),
+              status: "scheduled",
+            })
+            .eq("id", reminder.id);
+
+        // 每月提醒
+        } else if (reminder.repeat_type === "monthly") {
+
+          const [hour, minute] =
+            reminder.repeat_time.split(":").map(Number);
+
+          const nextTime = nextMonthlyTime(
+            reminder.repeat_day,
+            hour,
+            minute
+          );
+
+          await supabase
+            .from("reminders")
+            .update({
+              remind_at: toTaipeiISOString(nextTime),
+              status: "scheduled",
+            })
+            .eq("id", reminder.id);
+
+        // 單次提醒
+        } else {
+
+          await supabase
+            .from("reminders")
+            .update({
+              status: "reminded",
+            })
+            .eq("id", reminder.id);
+        }
+
+        console.log(
+          "提醒已發送:",
+          reminder.title,
+          reminder.remind_at
+        );
+
+      } catch (err) {
+        console.error("PUSH MESSAGE ERROR:", err);
+
+        // 發送失敗還原狀態
         await supabase
           .from("reminders")
           .update({
-            remind_at: toTaipeiISOString(nextTime),
             status: "scheduled",
           })
-          .eq("id", reminder.id);
-      } else if (reminder.repeat_type === "weekly") {
-        const [hour, minute] = reminder.repeat_time.split(":").map(Number);
-        const nextTime = nextWeeklyTime(reminder.repeat_day, hour, minute);
-
-        await supabase
-          .from("reminders")
-          .update({
-            remind_at: toTaipeiISOString(nextTime),
-            status: "scheduled",
-          })
-          .eq("id", reminder.id);
-      } else if (reminder.repeat_type === "monthly") {
-        const [hour, minute] = reminder.repeat_time.split(":").map(Number);
-        const nextTime = nextMonthlyTime(reminder.repeat_day, hour, minute);
-
-        await supabase
-          .from("reminders")
-          .update({
-            remind_at: toTaipeiISOString(nextTime),
-            status: "scheduled",
-          })
-          .eq("id", reminder.id);
-      } else {
-        await supabase
-          .from("reminders")
-          .update({ status: "reminded" })
           .eq("id", reminder.id);
       }
-
-      console.log("提醒已發送:", reminder.title);
-    } catch (err) {
-      console.error("PUSH MESSAGE ERROR:", err);
     }
+
+  } catch (err) {
+    console.error("CRON ERROR:", err);
   }
 });
 
