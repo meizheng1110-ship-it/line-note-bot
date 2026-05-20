@@ -4,8 +4,6 @@ import dotenv from "dotenv";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 import cron from "node-cron";
-import axios from "axios";
-import https from "https";
 
 dotenv.config();
 
@@ -29,11 +27,6 @@ const config = {
 const client = new line.messagingApi.MessagingApiClient({
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
 });
-const EMM_BASE_URL = "https://61.60.107.10";
-const emmHttpsAgent = new https.Agent({
-  rejectUnauthorized: false,
-});
-
 
 app.get("/", (req, res) => {
   res.send("LINE BOT RUNNING");
@@ -51,47 +44,24 @@ async function handleEvent(event) {
   try {
     const userText = event.message.text.trim();
     const userId = event.source.groupId || event.source.userId;
-    if (/^綁定\s*EMM$/i.test(userText)) 
-    if (/^EMM登入/i.test(userText)) {
-      await bindEmmAccount(event.replyToken, userId, userText);
-      return;
-    }{
-      const captchaData = await getEmmCaptcha();
 
-      global.emmCaptchaCache = global.emmCaptchaCache || {};
-
-      global.emmCaptchaCache[userId] = {
-        cookie: captchaData.cookie,
-      };
-
-      await client.replyMessage({
-        replyToken: event.replyToken,
-        messages: [
-          {
-            type: "image",
-            originalContentUrl: captchaData.imageData,
-            previewImageUrl: captchaData.imageData,
-          },
-          {
-            type: "text",
-            text:
-              "請輸入：\n\nEMM登入\n帳號：你的帳號\n密碼：你的密碼\n驗證碼：圖片上的文字",
-          },
-        ],
-      });
-
+    if (isWorkReportMenuIntent(userText)) {
+      await showWorkReportMenu(event.replyToken);
       return;
     }
 
-    if (
-      userText === "查待審核" ||
-      userText === "待審核" ||
-      userText === "查故障單" ||
-      userText === "我的故障單"
-    ) {
-      await listEmmMaintainReports(event.replyToken, userId);
+    const workReport = parseWorkReport(userText);
+
+    if (workReport) {
+      await createWorkReport(event.replyToken, event, workReport);
       return;
     }
+
+    if (isWorkReportQueryIntent(userText)) {
+      await listWorkReports(event.replyToken, event, userText);
+      return;
+    }
+
     if (isTodayReminderIntent(userText)) {
       await listTodayReminders(event.replyToken, userId);
       return;
@@ -101,28 +71,7 @@ async function handleEvent(event) {
       await listFutureReminders(event.replyToken, userId);
       return;
     }
-    if (userText === "EMM表單查詢") {
-          await reply(
-            event.replyToken,
-            `EMM 功能測試中 🚧
 
-        目前可使用：
-
-        1. 綁定 EMM 帳號
-
-        格式：
-
-        綁定EMM
-        帳號：你的帳號
-        密碼：你的密碼
-
-        2. 查待審核
-
-        輸入：
-        查待審核`
-          );
-          return;
-        }
     if (userText === "建立提醒") {
       await reply(
         event.replyToken,
@@ -154,7 +103,7 @@ async function handleEvent(event) {
       );
       return;
     }
-    
+
     const deleteTodayMatch = userText.match(
       /(刪除|刪掉|移除|取消)(今天|今日)?第?([0-9一二兩三四五六七八九十百]+)(個)?(提醒|待辦)?/
     );
@@ -212,6 +161,248 @@ async function handleEvent(event) {
     console.error(error);
     await reply(event.replyToken, "解析提醒失敗，請再試一次");
   }
+}
+
+const WORK_REPORT_TYPES = [
+  "工作抽查",
+  "會同中分局開會",
+  "與承包商開會",
+  "協議組織",
+  "其他公出",
+  "公出",
+];
+
+function isWorkReportMenuIntent(text) {
+  return (
+    text === "工作回報" ||
+    text === "EMM表單查詢" ||
+    text === "公出回報" ||
+    text === "回報選單"
+  );
+}
+
+async function showWorkReportMenu(replyToken) {
+  await reply(
+    replyToken,
+    `工作回報功能 ✅
+
+可以直接輸入：
+
+1. 工作抽查 國道6號隧道設備巡檢
+2. 會同中分局開會 76線設備討論
+3. 與承包商開會 施工前協調
+4. 協議組織 勤前教育
+5. 其他公出 支援現場作業
+
+查詢可以輸入：
+
+今日回報
+我的回報
+今日所有回報
+本週回報
+本週所有回報`
+  );
+}
+
+function parseWorkReport(text) {
+  const normalizedText = text.trim();
+
+  for (const type of WORK_REPORT_TYPES) {
+    if (normalizedText === type) {
+      return {
+        type,
+        content: "",
+      };
+    }
+
+    if (normalizedText.startsWith(type)) {
+      return {
+        type,
+        content: normalizedText.slice(type.length).trim(),
+      };
+    }
+  }
+
+  const reportMatch = normalizedText.match(
+    /^回報\s*(工作抽查|會同中分局開會|與承包商開會|協議組織|其他公出|公出)\s*(.*)$/
+  );
+
+  if (reportMatch) {
+    return {
+      type: reportMatch[1],
+      content: reportMatch[2].trim(),
+    };
+  }
+
+  return null;
+}
+
+function isWorkReportQueryIntent(text) {
+  return [
+    "今日回報",
+    "今天回報",
+    "我的回報",
+    "今日所有回報",
+    "今天所有回報",
+    "本週回報",
+    "這週回報",
+    "本週所有回報",
+    "這週所有回報",
+  ].includes(text);
+}
+
+async function getLineDisplayName(event) {
+  const fallbackName = "未命名使用者";
+
+  if (!event.source.userId) return fallbackName;
+
+  try {
+    const profile = await client.getProfile(event.source.userId);
+    return profile.displayName || fallbackName;
+  } catch (error) {
+    console.error("GET LINE PROFILE ERROR:", error);
+    return fallbackName;
+  }
+}
+
+function getCurrentLineUserId(event) {
+  return event.source.userId || event.source.groupId || "unknown";
+}
+
+async function createWorkReport(replyToken, event, report) {
+  if (!report.content) {
+    await reply(
+      replyToken,
+      `請在「${report.type}」後面加上內容，例如：\n\n${report.type} 國道6號隧道設備巡檢`
+    );
+    return;
+  }
+
+  const lineUserId = getCurrentLineUserId(event);
+  const userName = await getLineDisplayName(event);
+
+  const { error } = await supabase.from("work_logs").insert({
+    line_user_id: lineUserId,
+    user_name: userName,
+    type: report.type,
+    content: report.content,
+  });
+
+  if (error) {
+    console.error("CREATE WORK REPORT ERROR:", error);
+    await reply(replyToken, "工作回報建立失敗，請再試一次");
+    return;
+  }
+
+  await reply(
+    replyToken,
+    `已建立工作回報 ✅\n類型：${report.type}\n人員：${userName}\n內容：${report.content}`
+  );
+}
+
+function getTaipeiRange(daysBack = 0) {
+  const now = new Date();
+  const taipeiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+
+  const year = taipeiNow.getUTCFullYear();
+  const month = taipeiNow.getUTCMonth();
+  const day = taipeiNow.getUTCDate();
+
+  const startTaipei = new Date(Date.UTC(year, month, day - daysBack, 0, 0, 0));
+  const endTaipei = new Date(Date.UTC(year, month, day + 1, 0, 0, 0));
+
+  return {
+    startUtc: new Date(startTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+    endUtc: new Date(endTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+  };
+}
+
+function getThisWeekRangeUtc() {
+  const now = new Date();
+  const taipeiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+
+  const dayOfWeek = taipeiNow.getUTCDay();
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+  const startTaipei = new Date(Date.UTC(
+    taipeiNow.getUTCFullYear(),
+    taipeiNow.getUTCMonth(),
+    taipeiNow.getUTCDate() + diffToMonday,
+    0,
+    0,
+    0
+  ));
+
+  const endTaipei = new Date(Date.UTC(
+    taipeiNow.getUTCFullYear(),
+    taipeiNow.getUTCMonth(),
+    taipeiNow.getUTCDate() + 1,
+    0,
+    0,
+    0
+  ));
+
+  return {
+    startUtc: new Date(startTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+    endUtc: new Date(endTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+  };
+}
+
+function formatWorkLogTime(value) {
+  const date = new Date(value);
+
+  return new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function formatWorkReports(data, title) {
+  if (!data || data.length === 0) {
+    return `${title}：目前沒有資料`;
+  }
+
+  const text = data
+    .map((item, index) => {
+      return `${index + 1}. ${item.user_name || "未命名使用者"}\n類型：${item.type}\n內容：${item.content}\n時間：${formatWorkLogTime(item.created_at)}`;
+    })
+    .join("\n\n");
+
+  return `${title}：\n\n${text}`;
+}
+
+async function listWorkReports(replyToken, event, text) {
+  const lineUserId = getCurrentLineUserId(event);
+  const isAll = text.includes("所有");
+  const isWeek = text.includes("週") || text.includes("這週");
+
+  const range = isWeek ? getThisWeekRangeUtc() : getTaipeiRange(0);
+
+  let query = supabase
+    .from("work_logs")
+    .select("*")
+    .gte("created_at", range.startUtc)
+    .lt("created_at", range.endUtc)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (!isAll) {
+    query = query.eq("line_user_id", lineUserId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("LIST WORK REPORT ERROR:", error);
+    await reply(replyToken, "查詢工作回報失敗，請再試一次");
+    return;
+  }
+
+  await reply(replyToken, formatWorkReports(data, text));
 }
 
 function getRepeatText(result) {
@@ -334,6 +525,7 @@ function cleanReminderTitle(title) {
     .replace(/^(提醒我|跟我說|告訴我|叫我|提醒|要|幫我|請我)/, "")
     .trim();
 }
+
 function parseDailyReminder(text) {
   const match = text.match(
     /(?:每天|每日)\s*(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十百]+)\s*點\s*(?:(半)|([0-9一二兩三四五六七八九十百]+)\s*分?)?\s*(.*)/
@@ -776,274 +968,6 @@ async function deleteFutureReminder(replyToken, userId, number) {
   await reply(replyToken, `已刪除未來提醒：${target.title}`);
 }
 
-function parseBindEmmText(text) {
-  const usernameMatch = text.match(/帳號[:：]\s*(.+)/);
-  const passwordMatch = text.match(/密碼[:：]\s*(.+)/);
-  const captchaMatch = text.match(/驗證碼[:：]\s*(.+)/);
-
-  if (!usernameMatch || !passwordMatch || !captchaMatch) {
-    return null;
-  }
-
-  return {
-    username: usernameMatch[1].trim(),
-    password: passwordMatch[1].trim(),
-    captcha: captchaMatch[1].trim(),
-  };
-}
-
-function cookieArrayToString(cookies) {
-  if (!cookies || cookies.length === 0) return "";
-  return cookies.map((cookie) => cookie.split(";")[0]).join("; ");
-}
-
-async function getEmmCaptcha() {
-  const response = await axios.get(`${EMM_BASE_URL}/api/auth/captcha`, {
-    httpsAgent: emmHttpsAgent,
-    validateStatus: () => true,
-  });
-
-  if (response.status !== 200) {
-    throw new Error("取得 EMM 驗證碼失敗");
-  }
-
-  const cookie = cookieArrayToString(response.headers["set-cookie"]);
-  const imageData = response.data;
-
-  return {
-    cookie,
-    imageData,
-  };
-}
-
-
-
-async function loginEmm(username, password, captcha, cookie) {
-  const response = await axios.post(
-    `${EMM_BASE_URL}/api/auth/login`,
-    {
-      usernameOrEmail: username,
-      password: password,
-      captcha: captcha,
-    },
-    {
-      httpsAgent: emmHttpsAgent,
-      headers: {
-        "Content-Type": "application/json",
-        Cookie: cookie,
-      },
-      validateStatus: () => true,
-    }
-  );
-
-  if (response.status !== 200) {
-    throw new Error(
-      response.data?.error ||
-      response.data?.message ||
-      "EMM 登入失敗"
-    );
-  }
-
-  const newCookie = cookieArrayToString(response.headers["set-cookie"]);
-
-  return newCookie || cookie;
-}
-
-async function bindEmmAccount(replyToken, userId, text) {
-  const parsed = parseBindEmmText(text);
-
-  if (!parsed) {
-    await reply(
-      replyToken,
-      "請用這個格式綁定：\n\n綁定EMM\n帳號：你的帳號\n密碼：你的密碼"
-    );
-    return;
-  }
-
-  try {
-    const captchaCache = global.emmCaptchaCache?.[userId];
-
-    if (!captchaCache) {
-      throw new Error("請先輸入「綁定EMM」取得驗證碼");
-    }
-
-    const cookie = await loginEmm(
-      parsed.username,
-      parsed.password,
-      parsed.captcha,
-      captchaCache.cookie
-    );
-
-    const { error } = await supabase
-      .from("emm_accounts")
-      .upsert(
-        {
-          line_user_id: userId,
-          emm_username: parsed.username,
-          emm_password: parsed.password,
-          emm_cookie: cookie,
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: "line_user_id",
-        }
-      );
-
-    if (error) throw error;
-
-    await reply(replyToken, "EMM 帳號綁定成功 ✅\n你現在可以輸入：查待審核");
-  } catch (err) {
-    console.error("EMM BIND ERROR:", err);
-    await reply(replyToken, `EMM 綁定失敗：${err.message}`);
-  }
-}
-
-async function getEmmAccount(userId) {
-  const { data, error } = await supabase
-    .from("emm_accounts")
-    .select("*")
-    .eq("line_user_id", userId)
-    .single();
-
-  if (error || !data) return null;
-  return data;
-}
-
-async function refreshEmmCookie(account) {
-  const cookie = await loginEmm(account.emm_username, account.emm_password);
-
-  await supabase
-    .from("emm_accounts")
-    .update({
-      emm_cookie: cookie,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("line_user_id", account.line_user_id);
-
-  return cookie;
-}
-
-async function fetchMaintainReports(cookie) {
-  const payload = {
-    query: `
-      {
-        viewmaintainreportByParam(
-          area: "__",
-          id: null,
-          contract_id: null,
-          contractor_name: null,
-          class_id: null,
-          item_id: null,
-          equip_id: null,
-          road: null,
-          road_direction: null,
-          start: null,
-          end: null,
-          announce_state: 2,
-          current_node: 3962,
-          multikey: null
-        ) {
-          id
-          announce_num
-          report_num
-          announce_date
-          maintain_date
-          maintain_person
-          description
-          equip_name
-          item_name
-          class_name
-          area
-          contract_name
-          contractor_name
-          road
-          road_direction
-          location
-          announce_state
-          announce_state_name
-          multikey
-          multikey_name
-          undertaker
-          supervisor
-          flow_id
-        }
-      }
-    `,
-  };
-
-  const response = await axios.post(
-    `${EMM_BASE_URL}/api/getViewMaintainReport`,
-    payload,
-    {
-      httpsAgent: emmHttpsAgent,
-      headers: {
-        "Content-Type": "application/json",
-        Cookie: cookie,
-      },
-      validateStatus: () => true,
-    }
-  );
-
-  if (response.status !== 200) {
-    throw new Error(
-      response.data?.error ||
-      response.data?.message ||
-      `EMM 查詢失敗：${response.status}`
-    );
-  }
-
-  return response.data?.data?.viewmaintainreportByParam || [];
-}
-
-function formatMaintainReports(reports) {
-  if (!reports || reports.length === 0) {
-    return "目前沒有待審核故障單";
-  }
-
-  const topReports = reports.slice(0, 10);
-
-  const text = topReports
-    .map((item, index) => {
-      return `${index + 1}. ${item.equip_name || "未填設備"}
-單號：${item.announce_num || item.report_num || "無"}
-狀態：${item.announce_state_name || "無"}
-路線：${item.road || "無"} ${item.road_direction || ""}
-地點：${item.location || "無"}
-承辦：${item.undertaker || "無"}
-主管：${item.supervisor || "無"}`;
-    })
-    .join("\n\n");
-
-  return `待審核故障單：\n\n${text}`;
-}
-
-async function listEmmMaintainReports(replyToken, userId) {
-  const account = await getEmmAccount(userId);
-
-  if (!account) {
-    await reply(
-      replyToken,
-      "你還沒有綁定 EMM 帳號。\n\n請輸入：\n綁定EMM\n帳號：你的帳號\n密碼：你的密碼"
-    );
-    return;
-  }
-
-  try {
-    let reports;
-
-    try {
-      reports = await fetchMaintainReports(account.emm_cookie);
-    } catch (err) {
-      const newCookie = await refreshEmmCookie(account);
-      reports = await fetchMaintainReports(newCookie);
-    }
-
-    await reply(replyToken, formatMaintainReports(reports));
-  } catch (err) {
-    console.error("EMM REPORT ERROR:", err);
-    await reply(replyToken, `查詢 EMM 失敗：${err.message}`);
-  }
-}
 async function reply(replyToken, text) {
   await client.replyMessage({
     replyToken,
@@ -1060,7 +984,6 @@ cron.schedule("*/15 * * * * *", async () => {
   try {
     const now = new Date().toISOString();
 
-    // 往前補抓10分鐘，避免漏提醒
     const lookback = new Date(
       Date.now() - 10 * 60 * 1000
     ).toISOString();
@@ -1080,16 +1003,13 @@ cron.schedule("*/15 * * * * *", async () => {
 
     for (const reminder of data || []) {
       try {
-
-        // 防止重複發送
-        
-
         await supabase
           .from("reminders")
           .update({
             status: "reminded",
           })
           .eq("id", reminder.id);
+
         await client.pushMessage({
           to: reminder.line_user_id,
           messages: [
@@ -1100,9 +1020,7 @@ cron.schedule("*/15 * * * * *", async () => {
           ],
         });
 
-        // 每日提醒
         if (reminder.repeat_type === "daily") {
-
           const [hour, minute] =
             reminder.repeat_time.split(":").map(Number);
 
@@ -1119,10 +1037,7 @@ cron.schedule("*/15 * * * * *", async () => {
           if (updateError) {
             console.error(updateError);
           }
-
-        // 每週提醒
         } else if (reminder.repeat_type === "weekly") {
-
           const [hour, minute] =
             reminder.repeat_time.split(":").map(Number);
 
@@ -1139,10 +1054,7 @@ cron.schedule("*/15 * * * * *", async () => {
               status: "scheduled",
             })
             .eq("id", reminder.id);
-
-        // 每月提醒
         } else if (reminder.repeat_type === "monthly") {
-
           const [hour, minute] =
             reminder.repeat_time.split(":").map(Number);
 
@@ -1159,10 +1071,7 @@ cron.schedule("*/15 * * * * *", async () => {
               status: "scheduled",
             })
             .eq("id", reminder.id);
-
-        // 單次提醒
         } else {
-
           await supabase
             .from("reminders")
             .update({
@@ -1176,11 +1085,9 @@ cron.schedule("*/15 * * * * *", async () => {
           reminder.title,
           reminder.remind_at
         );
-
       } catch (err) {
         console.error("PUSH MESSAGE ERROR:", err);
 
-        // 發送失敗還原狀態
         await supabase
           .from("reminders")
           .update({
@@ -1189,7 +1096,6 @@ cron.schedule("*/15 * * * * *", async () => {
           .eq("id", reminder.id);
       }
     }
-
   } catch (err) {
     console.error("CRON ERROR:", err);
   }
