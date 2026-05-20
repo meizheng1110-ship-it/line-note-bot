@@ -45,6 +45,15 @@ async function handleEvent(event) {
     const userText = event.message.text.trim();
     const userId = event.source.groupId || event.source.userId;
 
+    if (userText.startsWith("新增回報模板")) {
+      await createWorkReportTemplate(event.replyToken, event, userText);
+      return;
+    }
+
+    if (/^選[0-9一二兩三四五六七八九十百]+$/.test(userText)) {
+      await createWorkReportFromSelectedTemplate(event.replyToken, event, userText);
+      return;
+    }
     if (isWorkReportMenuIntent(userText)) {
       await showWorkReportMenu(event.replyToken);
       return;
@@ -186,13 +195,27 @@ async function showWorkReportMenu(replyToken) {
     replyToken,
     `工作回報功能 ✅
 
-可以直接輸入：
+可用類型：
 
-1. 工作抽查 國道6號隧道設備巡檢
-2. 會同中分局開會 76線設備討論
-3. 與承包商開會 施工前協調
-4. 協議組織 勤前教育
-5. 其他公出 支援現場作業
+安衛內業檢查
+工作抽查
+會勘
+中分局會議
+請假
+其他
+
+新增常用模板：
+
+新增回報模板 工作抽查 國道6號隧道設備巡檢
+
+使用模板：
+
+直接輸入：
+工作抽查
+
+直接建立回報：
+
+工作抽查 國道6號隧道設備巡檢
 
 查詢可以輸入：
 
@@ -271,10 +294,7 @@ function getCurrentLineUserId(event) {
 
 async function createWorkReport(replyToken, event, report) {
   if (!report.content) {
-    await reply(
-      replyToken,
-      `請在「${report.type}」後面加上內容，例如：\n\n${report.type} 國道6號隧道設備巡檢`
-    );
+    await showWorkReportTemplates(replyToken, event, report.type);
     return;
   }
 
@@ -298,6 +318,132 @@ async function createWorkReport(replyToken, event, report) {
     replyToken,
     `已建立工作回報 ✅\n類型：${report.type}\n人員：${userName}\n內容：${report.content}`
   );
+}
+
+async function createWorkReportTemplate(replyToken, event, text) {
+  const match = text.match(
+    /^新增回報模板\s*(安衛內業檢查|工作抽查|會勘|中分局會議|請假|其他)\s+(.+)$/
+  );
+
+  if (!match) {
+    await reply(
+      replyToken,
+      `新增模板格式錯誤，請這樣輸入：
+
+新增回報模板 工作抽查 國道6號隧道設備巡檢
+
+可用類型：
+安衛內業檢查
+工作抽查
+會勘
+中分局會議
+請假
+其他`
+    );
+    return;
+  }
+
+  const lineUserId = getCurrentLineUserId(event);
+  const type = match[1];
+  const content = match[2].trim();
+
+  const { error } = await supabase.from("work_report_templates").insert({
+    line_user_id: lineUserId,
+    type,
+    content,
+  });
+
+  if (error) {
+    console.error("CREATE WORK TEMPLATE ERROR:", error);
+    await reply(replyToken, "新增回報模板失敗，請再試一次");
+    return;
+  }
+
+  await reply(
+    replyToken,
+    `已新增回報模板 ✅\n類型：${type}\n內容：${content}\n\n之後輸入「${type}」就可以選擇。`
+  );
+}
+
+async function showWorkReportTemplates(replyToken, event, type) {
+  const lineUserId = getCurrentLineUserId(event);
+
+  const { data, error } = await supabase
+    .from("work_report_templates")
+    .select("*")
+    .eq("line_user_id", lineUserId)
+    .eq("type", type)
+    .order("created_at", { ascending: true })
+    .limit(20);
+
+  if (error) {
+    console.error("LIST WORK TEMPLATE ERROR:", error);
+    await reply(replyToken, "查詢回報模板失敗，請再試一次");
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    await reply(
+      replyToken,
+      `你目前沒有「${type}」模板。
+
+可以先新增，例如：
+
+新增回報模板 ${type} 國道6號隧道設備巡檢
+
+或直接輸入：
+
+${type} 國道6號隧道設備巡檢`
+    );
+    return;
+  }
+
+  global.workTemplateCache = global.workTemplateCache || {};
+
+  global.workTemplateCache[lineUserId] = {
+    type,
+    templates: data,
+  };
+
+  const text = data
+    .map((item, index) => `${index + 1}. ${item.content}`)
+    .join("\n");
+
+  await reply(
+    replyToken,
+    `請選擇「${type}」模板：
+
+${text}
+
+請輸入：選1`
+  );
+}
+
+async function createWorkReportFromSelectedTemplate(replyToken, event, text) {
+  const lineUserId = getCurrentLineUserId(event);
+  const numberText = text.replace("選", "").trim();
+  const selectedNumber = parseNumberText(numberText);
+
+  const cache = global.workTemplateCache?.[lineUserId];
+
+  if (!cache || !cache.templates || cache.templates.length === 0) {
+    await reply(replyToken, "找不到可選的模板，請先輸入回報類型，例如：工作抽查");
+    return;
+  }
+
+  const selectedTemplate = cache.templates[selectedNumber - 1];
+
+  if (!selectedTemplate) {
+    await reply(replyToken, "找不到這個模板編號，請重新選擇");
+    return;
+  }
+
+  await createWorkReport(replyToken, event, {
+    type: cache.type,
+    content: selectedTemplate.content,
+  });
+
+  delete global.workTemplateCache[lineUserId];
 }
 
 function getTaipeiRange(daysBack = 0) {
