@@ -724,16 +724,24 @@ cron.schedule("*/15 * * * * *", async () => {
       try {
 
         // 防止重複發送
-        const { data: lockedReminder } = await supabase
-          .from("reminders")
-          .update({
-            status: "processing",
-          })
-          .eq("id", reminder.id)
-          .eq("status", "scheduled")
-          .select()
-          .single();
+        const { data: lockedReminder, error: lockError } =
+          await supabase
+            .from("reminders")
+            .update({
+              status: "processing",
+            })
+            .eq("id", reminder.id)
+            .eq("status", "scheduled")
+            .select();
 
+        if (lockError) {
+          console.error(lockError);
+          continue;
+        }
+
+        if (!lockedReminder || lockedReminder.length === 0) {
+          continue;
+        }
         if (!lockedReminder) {
           continue;
         }
@@ -756,13 +764,16 @@ cron.schedule("*/15 * * * * *", async () => {
 
           const nextTime = nextTaipeiTime(hour, minute);
 
-          await supabase
+          const { error: remindedError } = await supabase
             .from("reminders")
             .update({
-              remind_at: toTaipeiISOString(nextTime),
-              status: "scheduled",
+              status: "reminded",
             })
             .eq("id", reminder.id);
+
+          if (remindedError) {
+            console.error(remindedError);
+          }
 
         // 每週提醒
         } else if (reminder.repeat_type === "weekly") {
