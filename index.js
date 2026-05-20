@@ -164,12 +164,12 @@ async function handleEvent(event) {
 }
 
 const WORK_REPORT_TYPES = [
+  "安衛內業檢查",
   "工作抽查",
-  "會同中分局開會",
-  "與承包商開會",
-  "協議組織",
-  "其他公出",
-  "公出",
+  "會勘",
+  "中分局會議",
+  "請假",
+  "其他",
 ];
 
 function isWorkReportMenuIntent(text) {
