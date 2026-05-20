@@ -9,6 +9,7 @@
   "dependencies": {
     "@line/bot-sdk": "^9.7.0",
     "@supabase/supabase-js": "^2.105.4",
+    "axios": "^1.16.1",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "node-cron": "^4.2.1",

@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 import cron from "node-cron";
+import axios from "axios";
 
 dotenv.config();
 
@@ -27,6 +28,7 @@ const config = {
 const client = new line.messagingApi.MessagingApiClient({
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
 });
+const EMM_BASE_URL = "https://61.60.107.10";
 
 app.get("/", (req, res) => {
   res.send("LINE BOT RUNNING");
@@ -44,7 +46,20 @@ async function handleEvent(event) {
   try {
     const userText = event.message.text.trim();
     const userId = event.source.groupId || event.source.userId;
+    if (userText.startsWith("綁定EMM")) {
+      await bindEmmAccount(event.replyToken, userId, userText);
+      return;
+    }
 
+    if (
+      userText === "查待審核" ||
+      userText === "待審核" ||
+      userText === "查故障單" ||
+      userText === "我的故障單"
+    ) {
+      await listEmmMaintainReports(event.replyToken, userId);
+      return;
+    }
     if (isTodayReminderIntent(userText)) {
       await listTodayReminders(event.replyToken, userId);
       return;
@@ -729,6 +744,238 @@ async function deleteFutureReminder(replyToken, userId, number) {
   await reply(replyToken, `已刪除未來提醒：${target.title}`);
 }
 
+function parseBindEmmText(text) {
+  const accountMatch = text.match(/帳號[:：\s]+([^\s\n]+)/);
+  const passwordMatch = text.match(/密碼[:：\s]+([^\s\n]+)/);
+
+  if (!accountMatch || !passwordMatch) return null;
+
+  return {
+    username: accountMatch[1].trim(),
+    password: passwordMatch[1].trim(),
+  };
+}
+
+function cookieArrayToString(cookies) {
+  if (!cookies || cookies.length === 0) return "";
+  return cookies.map((cookie) => cookie.split(";")[0]).join("; ");
+}
+
+async function loginEmm(username, password) {
+  const response = await axios.post(
+    `${EMM_BASE_URL}/api/auth/login`,
+    {
+      account: username,
+      password: password,
+    },
+    {
+      headers: {
+        "Content-Type": "application/json",
+      },
+      validateStatus: () => true,
+    }
+  );
+
+  if (response.status !== 200) {
+    throw new Error(
+      response.data?.error ||
+      response.data?.message ||
+      "EMM 登入失敗"
+    );
+  }
+
+  const cookie = cookieArrayToString(response.headers["set-cookie"]);
+
+  if (!cookie) {
+    throw new Error("EMM 登入成功，但沒有取得 Cookie");
+  }
+
+  return cookie;
+}
+
+async function bindEmmAccount(replyToken, userId, text) {
+  const parsed = parseBindEmmText(text);
+
+  if (!parsed) {
+    await reply(
+      replyToken,
+      "請用這個格式綁定：\n\n綁定EMM\n帳號：你的帳號\n密碼：你的密碼"
+    );
+    return;
+  }
+
+  try {
+    const cookie = await loginEmm(parsed.username, parsed.password);
+
+    const { error } = await supabase
+      .from("emm_accounts")
+      .upsert(
+        {
+          line_user_id: userId,
+          emm_username: parsed.username,
+          emm_password: parsed.password,
+          emm_cookie: cookie,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "line_user_id",
+        }
+      );
+
+    if (error) throw error;
+
+    await reply(replyToken, "EMM 帳號綁定成功 ✅\n你現在可以輸入：查待審核");
+  } catch (err) {
+    console.error("EMM BIND ERROR:", err);
+    await reply(replyToken, `EMM 綁定失敗：${err.message}`);
+  }
+}
+
+async function getEmmAccount(userId) {
+  const { data, error } = await supabase
+    .from("emm_accounts")
+    .select("*")
+    .eq("line_user_id", userId)
+    .single();
+
+  if (error || !data) return null;
+  return data;
+}
+
+async function refreshEmmCookie(account) {
+  const cookie = await loginEmm(account.emm_username, account.emm_password);
+
+  await supabase
+    .from("emm_accounts")
+    .update({
+      emm_cookie: cookie,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("line_user_id", account.line_user_id);
+
+  return cookie;
+}
+
+async function fetchMaintainReports(cookie) {
+  const payload = {
+    query: `
+      {
+        viewmaintainreportByParam(
+          area: "__",
+          id: null,
+          contract_id: null,
+          contractor_name: null,
+          class_id: null,
+          item_id: null,
+          equip_id: null,
+          road: null,
+          road_direction: null,
+          start: null,
+          end: null,
+          announce_state: 2,
+          current_node: 3962,
+          multikey: null
+        ) {
+          id
+          announce_num
+          report_num
+          announce_date
+          maintain_date
+          maintain_person
+          description
+          equip_name
+          item_name
+          class_name
+          area
+          contract_name
+          contractor_name
+          road
+          road_direction
+          location
+          announce_state
+          announce_state_name
+          multikey
+          multikey_name
+          undertaker
+          supervisor
+          flow_id
+        }
+      }
+    `,
+  };
+
+  const response = await axios.post(
+    `${EMM_BASE_URL}/api/getViewMaintainReport`,
+    payload,
+    {
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookie,
+      },
+      validateStatus: () => true,
+    }
+  );
+
+  if (response.status !== 200) {
+    throw new Error(
+      response.data?.error ||
+      response.data?.message ||
+      `EMM 查詢失敗：${response.status}`
+    );
+  }
+
+  return response.data?.data?.viewmaintainreportByParam || [];
+}
+
+function formatMaintainReports(reports) {
+  if (!reports || reports.length === 0) {
+    return "目前沒有待審核故障單";
+  }
+
+  const topReports = reports.slice(0, 10);
+
+  const text = topReports
+    .map((item, index) => {
+      return `${index + 1}. ${item.equip_name || "未填設備"}
+單號：${item.announce_num || item.report_num || "無"}
+狀態：${item.announce_state_name || "無"}
+路線：${item.road || "無"} ${item.road_direction || ""}
+地點：${item.location || "無"}
+承辦：${item.undertaker || "無"}
+主管：${item.supervisor || "無"}`;
+    })
+    .join("\n\n");
+
+  return `待審核故障單：\n\n${text}`;
+}
+
+async function listEmmMaintainReports(replyToken, userId) {
+  const account = await getEmmAccount(userId);
+
+  if (!account) {
+    await reply(
+      replyToken,
+      "你還沒有綁定 EMM 帳號。\n\n請輸入：\n綁定EMM\n帳號：你的帳號\n密碼：你的密碼"
+    );
+    return;
+  }
+
+  try {
+    let reports;
+
+    try {
+      reports = await fetchMaintainReports(account.emm_cookie);
+    } catch (err) {
+      const newCookie = await refreshEmmCookie(account);
+      reports = await fetchMaintainReports(newCookie);
+    }
+
+    await reply(replyToken, formatMaintainReports(reports));
+  } catch (err) {
+    console.error("EMM REPORT ERROR:", err);
+    await reply(replyToken, `查詢 EMM 失敗：${err.message}`);
+  }
+}
 async function reply(replyToken, text) {
   await client.replyMessage({
     replyToken,
