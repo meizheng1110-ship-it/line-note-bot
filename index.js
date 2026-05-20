@@ -69,7 +69,28 @@ async function handleEvent(event) {
       await listFutureReminders(event.replyToken, userId);
       return;
     }
+    if (userText === "EMM表單查詢") {
+          await reply(
+            event.replyToken,
+            `EMM 功能測試中 🚧
 
+        目前可使用：
+
+        1. 綁定 EMM 帳號
+
+        格式：
+
+        綁定EMM
+        帳號：你的帳號
+        密碼：你的密碼
+
+        2. 查待審核
+
+        輸入：
+        查待審核`
+          );
+          return;
+        }
     if (userText === "建立提醒") {
       await reply(
         event.replyToken,
@@ -101,28 +122,7 @@ async function handleEvent(event) {
       );
       return;
     }
-    if (userText === "EMM表單查詢") {
-      await reply(
-        event.replyToken,
-        `EMM 功能測試中 🚧
-
-    目前可使用：
-
-    1. 綁定 EMM 帳號
-
-    格式：
-
-    綁定EMM
-    帳號：你的帳號
-    密碼：你的密碼
-
-    2. 查待審核
-
-    輸入：
-    查待審核`
-      );
-      return;
-    }
+    
     const deleteTodayMatch = userText.match(
       /(刪除|刪掉|移除|取消)(今天|今日)?第?([0-9一二兩三四五六七八九十百]+)(個)?(提醒|待辦)?/
     );
