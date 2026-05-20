@@ -5,6 +5,7 @@ import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 import cron from "node-cron";
 import axios from "axios";
+import https from "https";
 
 dotenv.config();
 
@@ -29,6 +30,10 @@ const client = new line.messagingApi.MessagingApiClient({
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
 });
 const EMM_BASE_URL = "https://61.60.107.10";
+const emmHttpsAgent = new https.Agent({
+  rejectUnauthorized: false,
+});
+
 
 app.get("/", (req, res) => {
   res.send("LINE BOT RUNNING");
@@ -46,8 +51,35 @@ async function handleEvent(event) {
   try {
     const userText = event.message.text.trim();
     const userId = event.source.groupId || event.source.userId;
-    if (/^綁定\s*EMM/i.test(userText)) {
+    if (/^綁定\s*EMM$/i.test(userText)) 
+    if (/^EMM登入/i.test(userText)) {
       await bindEmmAccount(event.replyToken, userId, userText);
+      return;
+    }{
+      const captchaData = await getEmmCaptcha();
+
+      global.emmCaptchaCache = global.emmCaptchaCache || {};
+
+      global.emmCaptchaCache[userId] = {
+        cookie: captchaData.cookie,
+      };
+
+      await client.replyMessage({
+        replyToken: event.replyToken,
+        messages: [
+          {
+            type: "image",
+            originalContentUrl: captchaData.imageData,
+            previewImageUrl: captchaData.imageData,
+          },
+          {
+            type: "text",
+            text:
+              "請輸入：\n\nEMM登入\n帳號：你的帳號\n密碼：你的密碼\n驗證碼：圖片上的文字",
+          },
+        ],
+      });
+
       return;
     }
 
@@ -745,14 +777,18 @@ async function deleteFutureReminder(replyToken, userId, number) {
 }
 
 function parseBindEmmText(text) {
-  const accountMatch = text.match(/帳號[:：\s]+([^\s\n]+)/);
-  const passwordMatch = text.match(/密碼[:：\s]+([^\s\n]+)/);
+  const usernameMatch = text.match(/帳號[:：]\s*(.+)/);
+  const passwordMatch = text.match(/密碼[:：]\s*(.+)/);
+  const captchaMatch = text.match(/驗證碼[:：]\s*(.+)/);
 
-  if (!accountMatch || !passwordMatch) return null;
+  if (!usernameMatch || !passwordMatch || !captchaMatch) {
+    return null;
+  }
 
   return {
-    username: accountMatch[1].trim(),
+    username: usernameMatch[1].trim(),
     password: passwordMatch[1].trim(),
+    captcha: captchaMatch[1].trim(),
   };
 }
 
@@ -761,16 +797,40 @@ function cookieArrayToString(cookies) {
   return cookies.map((cookie) => cookie.split(";")[0]).join("; ");
 }
 
-async function loginEmm(username, password) {
+async function getEmmCaptcha() {
+  const response = await axios.get(`${EMM_BASE_URL}/api/auth/captcha`, {
+    httpsAgent: emmHttpsAgent,
+    validateStatus: () => true,
+  });
+
+  if (response.status !== 200) {
+    throw new Error("取得 EMM 驗證碼失敗");
+  }
+
+  const cookie = cookieArrayToString(response.headers["set-cookie"]);
+  const imageData = response.data;
+
+  return {
+    cookie,
+    imageData,
+  };
+}
+
+
+
+async function loginEmm(username, password, captcha, cookie) {
   const response = await axios.post(
     `${EMM_BASE_URL}/api/auth/login`,
     {
-      account: username,
+      usernameOrEmail: username,
       password: password,
+      captcha: captcha,
     },
     {
+      httpsAgent: emmHttpsAgent,
       headers: {
         "Content-Type": "application/json",
+        Cookie: cookie,
       },
       validateStatus: () => true,
     }
@@ -784,13 +844,9 @@ async function loginEmm(username, password) {
     );
   }
 
-  const cookie = cookieArrayToString(response.headers["set-cookie"]);
+  const newCookie = cookieArrayToString(response.headers["set-cookie"]);
 
-  if (!cookie) {
-    throw new Error("EMM 登入成功，但沒有取得 Cookie");
-  }
-
-  return cookie;
+  return newCookie || cookie;
 }
 
 async function bindEmmAccount(replyToken, userId, text) {
@@ -805,7 +861,18 @@ async function bindEmmAccount(replyToken, userId, text) {
   }
 
   try {
-    const cookie = await loginEmm(parsed.username, parsed.password);
+    const captchaCache = global.emmCaptchaCache?.[userId];
+
+    if (!captchaCache) {
+      throw new Error("請先輸入「綁定EMM」取得驗證碼");
+    }
+
+    const cookie = await loginEmm(
+      parsed.username,
+      parsed.password,
+      parsed.captcha,
+      captchaCache.cookie
+    );
 
     const { error } = await supabase
       .from("emm_accounts")
@@ -908,6 +975,7 @@ async function fetchMaintainReports(cookie) {
     `${EMM_BASE_URL}/api/getViewMaintainReport`,
     payload,
     {
+      httpsAgent: emmHttpsAgent,
       headers: {
         "Content-Type": "application/json",
         Cookie: cookie,
