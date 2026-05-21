@@ -42,15 +42,6 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 async function handleEvent(event) {
-  if (
-  userText.includes("今日紀錄") ||
-  userText.includes("今天紀錄") ||
-  userText.includes("今天提醒紀錄") ||
-  userText.includes("今天做了什麼")
-) {
-  await listTodayReminderHistory(event.replyToken, userId);
-  return;
-}
   if (event.type !== "message") return;
   if (event.message.type !== "text") return;
 
@@ -58,150 +49,40 @@ async function handleEvent(event) {
     const userText = event.message.text.trim();
     const userId = event.source.groupId || event.source.userId;
 
+    // 1. AI 確認流程：使用者正在選工作回報類型時，不要再丟給 AI
     if (
-  global.aiConfirmCache?.[userId] &&
-  /^(類型)?[1-6]$/.test(userText)
-) {
-  const cache = global.aiConfirmCache?.[userId];
-
-  if (!cache) {
-    await reply(event.replyToken, "目前沒有等待確認的工作回報");
-    return;
-  }
-
-  const typeMap = {
-    1: "安衛內業檢查",
-    2: "工作抽查",
-    3: "會勘",
-    4: "中分局會議",
-    5: "請假",
-    6: "其他",
-  };
-
-  const selectedNumber = userText.replace("類型", "").trim();
-  const selectedType = typeMap[selectedNumber];
-
-  await createWorkReport(event.replyToken, event, {
-    type: selectedType,
-    content: cache.content,
-  });
-
-  delete global.aiConfirmCache[userId];
-  return;
-}
-    const aiIntent = await parseUserIntent(userText);
-    console.log("AI INTENT:", aiIntent);
-    if (aiIntent.intent === "query_reminder_history") {
-    await listReminderHistory(event.replyToken, userId, {
-      range: aiIntent.range || "today",
-      keyword: aiIntent.keyword || null,
-      count_only: aiIntent.count_only || false,
-    });
-    return;
-  }
-    if (aiIntent.intent === "query_work_report") {
-    await listWorkReports(
-      event.replyToken,
-      event,
-      {
-        range: aiIntent.range,
-        work_type: aiIntent.work_type,
-      }
-    );
-
-    return;
-  }
-    if (
-    aiIntent.intent === "create_work_report" &&
-    (
-      aiIntent.need_confirm === true ||
-      (aiIntent.confidence !== undefined && aiIntent.confidence < 0.8)
-    )
+      global.aiConfirmCache?.[userId] &&
+      /^(類型)?[1-6]$/.test(userText)
     ) {
-  global.aiConfirmCache = global.aiConfirmCache || {};
+      const cache = global.aiConfirmCache[userId];
 
-  global.aiConfirmCache[userId] = {
-    raw_text: userText,
-    content: aiIntent.content || userText,
-  };
+      const typeMap = {
+        1: "安衛內業檢查",
+        2: "工作抽查",
+        3: "會勘",
+        4: "中分局會議",
+        5: "請假",
+        6: "其他",
+      };
 
-  await reply(
-    event.replyToken,
-    `我不太確定你要建立哪一種工作回報，請選擇：
+      const selectedNumber = userText.replace("類型", "").trim();
+      const selectedType = typeMap[selectedNumber];
 
-1. 安衛內業檢查
-2. 工作抽查
-3. 會勘
-4. 中分局會議
-5. 請假
-6. 其他
+      await createWorkReport(event.replyToken, event, {
+        type: selectedType,
+        content: cache.content,
+      });
 
-請輸入：類型1`
-  );
-  return;
-}
+      delete global.aiConfirmCache[userId];
+      return;
+    }
 
-  if (aiIntent.intent === "query_todo") {
-  if (aiIntent.range === "today") {
-    await listReminderDateQuery(event.replyToken, userId, {
-      type: "date",
-      days: 0,
-      title: "今日待辦",
-    });
-    return;
-  }
-
-  if (aiIntent.range === "tomorrow") {
-    await listReminderDateQuery(event.replyToken, userId, {
-      type: "date",
-      days: 1,
-      title: "明日待辦",
-    });
-    return;
-  }
-
-  if (aiIntent.range === "week") {
-    await listReminderDateQuery(event.replyToken, userId, {
-      type: "week",
-      title: "本週待辦",
-    });
-    return;
-  }
-}
-
-if (aiIntent.intent === "query_work_report") {
-  if (aiIntent.range === "today") {
-    await listWorkReports(event.replyToken, event, "今日回報");
-    return;
-  }
-
-  if (aiIntent.range === "week") {
-    await listWorkReports(event.replyToken, event, "本週回報");
-    return;
-  }
-}
-
-if (aiIntent.intent === "create_work_report") {
-  await createWorkReport(event.replyToken, event, {
-    type: aiIntent.work_type,
-    content: aiIntent.content,
-  });
-  return;
-}
-
+    // 2. 固定指令先走本地判斷，不要浪費 AI
     if (userText.startsWith("新增回報模板")) {
       await createWorkReportTemplate(event.replyToken, event, userText);
       return;
     }
 
-    if (/^(選)?[0-9一二兩三四五六七八九十百]+$/.test(userText)) {
-      await createWorkReportFromSelectedTemplate(event.replyToken, event, userText);
-      return;
-    }
-    if (isWorkReportMenuIntent(userText)) {
-      await showWorkReportMenu(event.replyToken);
-      return;
-    }
     if (userText.startsWith("刪除模板")) {
       await showDeleteWorkReportTemplates(event.replyToken, event, userText);
       return;
@@ -211,44 +92,14 @@ if (aiIntent.intent === "create_work_report") {
       await deleteSelectedWorkReportTemplate(event.replyToken, event, userText);
       return;
     }
-    const workReport = parseWorkReport(userText);
 
-    if (workReport) {
-      await createWorkReport(event.replyToken, event, workReport);
+    if (/^(選)?[0-9一二兩三四五六七八九十百]+$/.test(userText)) {
+      await createWorkReportFromSelectedTemplate(event.replyToken, event, userText);
       return;
     }
 
-    if (isWorkReportQueryIntent(userText)) {
-      await listWorkReports(event.replyToken, event, userText);
-      return;
-    }
-
-    
-    const reminderDateQuery = parseReminderDateQuery(userText);
-
-    const isReminderCreationText =
-      userText.includes("提醒我") ||
-      userText.includes("提醒") ||
-      userText.includes("每天") ||
-      userText.includes("每日") ||
-      userText.includes("每週") ||
-      userText.includes("每周") ||
-      userText.includes("每月") ||
-      userText.includes("分鐘後") ||
-      userText.includes("小時後") ||
-      userText.includes("天後");
-
-    if (reminderDateQuery && !isReminderCreationText) {
-      await listReminderDateQuery(event.replyToken, userId, reminderDateQuery);
-      return;
-    }
-    if (isTodayReminderIntent(userText) && !isReminderCreationText) {
-      await listTodayReminders(event.replyToken, userId);
-      return;
-    }
-
-    if (isFutureReminderIntent(userText) && !isReminderCreationText) {
-      await listFutureReminders(event.replyToken, userId);
+    if (isWorkReportMenuIntent(userText)) {
+      await showWorkReportMenu(event.replyToken);
       return;
     }
 
@@ -284,6 +135,7 @@ if (aiIntent.intent === "create_work_report") {
       return;
     }
 
+    // 3. 刪除提醒先處理
     const deleteTodayMatch = userText.match(
       /(刪除|刪掉|移除|取消)(今天|今日)?第?([0-9一二兩三四五六七八九十百]+)(個)?(提醒|待辦)?/
     );
@@ -304,46 +156,174 @@ if (aiIntent.intent === "create_work_report") {
       return;
     }
 
-    const result =
-      parseRelativeReminder(userText) ||
-      parseDailyReminder(userText) ||
-      parseWeeklyReminder(userText) ||
-      parseMonthlyReminder(userText) ||
-      await parseReminder(userText);
+    // 4. 明確的提醒建立先走本地提醒解析，不要進 AI
+    const isReminderCreationText =
+      userText.includes("提醒我") ||
+      userText.includes("提醒") ||
+      userText.includes("每天") ||
+      userText.includes("每日") ||
+      userText.includes("每週") ||
+      userText.includes("每周") ||
+      userText.includes("每月") ||
+      userText.includes("分鐘後") ||
+      userText.includes("小時後") ||
+      userText.includes("天後");
 
-    if (!result.title || !result.time) {
-      await reply(
+    if (isReminderCreationText) {
+      await createReminderFromText(event.replyToken, userId, userText);
+      return;
+    }
+
+    // 5. 明確工作回報與舊查詢先走本地判斷
+    const workReport = parseWorkReport(userText);
+
+    if (workReport) {
+      await createWorkReport(event.replyToken, event, workReport);
+      return;
+    }
+
+    if (isWorkReportQueryIntent(userText)) {
+      await listWorkReports(event.replyToken, event, userText);
+      return;
+    }
+
+    const reminderDateQuery = parseReminderDateQuery(userText);
+    if (reminderDateQuery) {
+      await listReminderDateQuery(event.replyToken, userId, reminderDateQuery);
+      return;
+    }
+
+    if (isTodayReminderIntent(userText)) {
+      await listTodayReminders(event.replyToken, userId);
+      return;
+    }
+
+    if (isFutureReminderIntent(userText)) {
+      await listFutureReminders(event.replyToken, userId);
+      return;
+    }
+
+    // 6. 以上都判斷不到，才交給 AI 理解自然語言
+    const aiIntent = await parseUserIntent(userText);
+    console.log("AI INTENT:", aiIntent);
+
+    if (aiIntent.intent === "query_reminder_history") {
+      await listReminderHistory(event.replyToken, userId, {
+        range: aiIntent.range || "today",
+        keyword: aiIntent.keyword || null,
+        count_only: aiIntent.count_only || false,
+      });
+      return;
+    }
+
+    if (aiIntent.intent === "query_todo") {
+      await listReminderDateQueryWithFilter(
         event.replyToken,
-        "我不太確定提醒時間，可以說：\n\n明天早上8點提醒我開會\n3分鐘後提醒我喝水\n兩小時後提醒我開會\n三天後提醒我繳費\n每天早上8點提醒我吃藥\n每週五提醒我交報告\n每月4號提醒我要做安衛檢查表"
+        userId,
+        {
+          range: aiIntent.range || "today",
+          keyword: aiIntent.keyword || null,
+          count_only: aiIntent.count_only || false,
+        }
       );
       return;
     }
 
-    const summaryType = getReminderSummaryType(result.title);
+    if (aiIntent.intent === "query_work_report") {
+      await listWorkReports(
+        event.replyToken,
+        event,
+        {
+          range: aiIntent.range || "today",
+          work_type: aiIntent.work_type || null,
+        }
+      );
+      return;
+    }
 
-    const { error } = await supabase.from("reminders").insert({
-      line_user_id: userId,
-      raw_text: userText,
-      title: result.title,
-      remind_at: result.time,
-      status: "scheduled",
-      repeat_type: result.repeat_type || "none",
-      repeat_time: result.repeat_time || null,
-      repeat_day: result.repeat_day || null,
-      summary_type: summaryType,
-    });
+    if (
+      aiIntent.intent === "create_work_report" &&
+      (
+        aiIntent.need_confirm === true ||
+        (aiIntent.confidence !== undefined && aiIntent.confidence < 0.8) ||
+        !aiIntent.work_type
+      )
+    ) {
+      global.aiConfirmCache = global.aiConfirmCache || {};
 
-    if (error) throw error;
+      global.aiConfirmCache[userId] = {
+        raw_text: userText,
+        content: aiIntent.content || userText,
+      };
 
-    await reply(
-      event.replyToken,
-      `已建立提醒 ✅\n提醒事項：${result.title}\n提醒時間：${formatTaipeiTime(result.time)}` +
-        getRepeatText(result)
-    );
+      await reply(
+        event.replyToken,
+        `我不太確定你要建立哪一種工作回報，請選擇：
+
+1. 安衛內業檢查
+2. 工作抽查
+3. 會勘
+4. 中分局會議
+5. 請假
+6. 其他
+
+請輸入：類型1`
+      );
+      return;
+    }
+
+    if (aiIntent.intent === "create_work_report") {
+      await createWorkReport(event.replyToken, event, {
+        type: aiIntent.work_type,
+        content: aiIntent.content || userText,
+      });
+      return;
+    }
+
+    await createReminderFromText(event.replyToken, userId, userText);
   } catch (error) {
     console.error(error);
-    await reply(event.replyToken, "解析提醒失敗，請再試一次");
+    await reply(event.replyToken, "解析失敗，請再試一次");
   }
+}
+
+async function createReminderFromText(replyToken, userId, userText) {
+  const result =
+    parseRelativeReminder(userText) ||
+    parseDailyReminder(userText) ||
+    parseWeeklyReminder(userText) ||
+    parseMonthlyReminder(userText) ||
+    await parseReminder(userText);
+
+  if (!result.title || !result.time) {
+    await reply(
+      replyToken,
+      "我不太確定提醒時間，可以說：\n\n明天早上8點提醒我開會\n3分鐘後提醒我喝水\n兩小時後提醒我開會\n三天後提醒我繳費\n每天早上8點提醒我吃藥\n每週五提醒我交報告\n每月4號提醒我要做安衛檢查表"
+    );
+    return;
+  }
+
+  const summaryType = getReminderSummaryType(result.title);
+
+  const { error } = await supabase.from("reminders").insert({
+    line_user_id: userId,
+    raw_text: userText,
+    title: result.title,
+    remind_at: result.time,
+    status: "scheduled",
+    repeat_type: result.repeat_type || "none",
+    repeat_time: result.repeat_time || null,
+    repeat_day: result.repeat_day || null,
+    summary_type: summaryType,
+  });
+
+  if (error) throw error;
+
+  await reply(
+    replyToken,
+    `已建立提醒 ✅\n提醒事項：${result.title}\n提醒時間：${formatTaipeiTime(result.time)}` +
+      getRepeatText(result)
+  );
 }
 
 const WORK_REPORT_TYPES = [
@@ -820,12 +800,72 @@ function formatWorkReports(data, title) {
   return `${title}：\n\n${text}`;
 }
 
-async function listWorkReports(replyToken, event, text) {
-  const lineUserId = getCurrentLineUserId(event);
-  const isAll = true;
-  const isWeek = text.includes("週") || text.includes("這週");
+function getThisMonthRangeUtc() {
+  const now = new Date();
+  const taipeiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
 
-  const range = isWeek ? getThisWeekRangeUtc() : getTaipeiRange(0);
+  const startTaipei = new Date(Date.UTC(
+    taipeiNow.getUTCFullYear(),
+    taipeiNow.getUTCMonth(),
+    1,
+    0,
+    0,
+    0
+  ));
+
+  const endTaipei = new Date(Date.UTC(
+    taipeiNow.getUTCFullYear(),
+    taipeiNow.getUTCMonth(),
+    taipeiNow.getUTCDate() + 1,
+    0,
+    0,
+    0
+  ));
+
+  return {
+    startUtc: new Date(startTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+    endUtc: new Date(endTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+  };
+}
+
+async function listWorkReports(replyToken, event, input) {
+  const lineUserId = getCurrentLineUserId(event);
+
+  let rangeName = "today";
+  let workType = null;
+  let title = "今日回報";
+  let isAll = true;
+
+  if (typeof input === "string") {
+    isAll = input !== "我的回報";
+    workType = null;
+
+    if (input.includes("月")) {
+      rangeName = "month";
+      title = "本月回報";
+    } else if (input.includes("週") || input.includes("周") || input.includes("這週")) {
+      rangeName = "week";
+      title = "本週回報";
+    } else {
+      rangeName = "today";
+      title = input;
+    }
+  } else {
+    rangeName = input?.range || "today";
+    workType = input?.work_type || null;
+    isAll = true;
+
+    if (rangeName === "month") title = workType ? `本月${workType}回報` : "本月回報";
+    else if (rangeName === "week") title = workType ? `本週${workType}回報` : "本週回報";
+    else title = workType ? `今日${workType}回報` : "今日回報";
+  }
+
+  const range =
+    rangeName === "month"
+      ? getThisMonthRangeUtc()
+      : rangeName === "week"
+      ? getThisWeekRangeUtc()
+      : getTaipeiRange(0);
 
   let query = supabase
     .from("work_logs")
@@ -833,10 +873,14 @@ async function listWorkReports(replyToken, event, text) {
     .gte("created_at", range.startUtc)
     .lt("created_at", range.endUtc)
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(50);
 
   if (!isAll) {
     query = query.eq("line_user_id", lineUserId);
+  }
+
+  if (workType) {
+    query = query.eq("type", workType);
   }
 
   const { data, error } = await query;
@@ -847,9 +891,8 @@ async function listWorkReports(replyToken, event, text) {
     return;
   }
 
-  await reply(replyToken, formatWorkReports(data, text));
+  await reply(replyToken, formatWorkReports(data, title));
 }
-
 
 function getRepeatText(result) {
   if (result.repeat_type === "daily") return "\n重複：每天";
@@ -1216,135 +1259,61 @@ async function parseUserIntent(userText) {
 
 支援 intent：
 query_todo
+query_reminder_history
 query_work_report
 create_work_report
 unknown
 
 JSON 格式：
 {
-  "intent": "query_todo|query_work_report|create_work_report|unknown",
+  "intent": "query_todo|query_reminder_history|query_work_report|create_work_report|unknown",
   "range": "today|tomorrow|week|month|null",
   "work_type": null,
   "content": null,
-  "confidence": 0.0,
-  "need_confirm": false,
   "keyword": null,
-  "count_only": false
+  "count_only": false,
+  "confidence": 0.0,
+  "need_confirm": false
 }
 
-規則：
-今天待辦、今日待辦、今天的待辦事項 = query_todo, range=today
-明天待辦、隔日待辦 = query_todo, range=tomorrow
-本週待辦 = query_todo, range=week
+重要規則：
+- 如果是「提醒我、每天、每日、每週、每月、幾分鐘後、幾小時後」這種建立提醒，回 unknown。
+- 如果是「新增模板、刪除、選1、類型1」這種操作，回 unknown。
+- 如果使用者問「幾個、幾次、多少」，count_only=true。
 
-今天工作回報、今日工作回報 = query_work_report, range=today
-本週工作回報、這週工作回報 = query_work_report, range=week
+待辦查詢：
+- 「今天待辦、今日待辦、今天的待辦事項、今天要幹嘛、我今天要做什麼、今天有什麼事」= query_todo, range=today。
+- 「明天待辦、隔日待辦、明天有什麼事、明天要做什麼」= query_todo, range=tomorrow。
+- 「本週待辦、這週待辦、這禮拜要幹嘛」= query_todo, range=week。
+- 「我今天有幾個會勘」= query_todo, range=today, keyword=會勘, count_only=true。
+- 「我今天喝幾次水」= query_todo, range=today, keyword=喝水, count_only=true。
+- 「我今天還有幾個會要開」= query_todo, range=today, keyword=開會, count_only=true。
 
-工作抽查 國6巡檢 = create_work_report, work_type=工作抽查, content=國6巡檢
-會勘 76線設備討論 = create_work_report, work_type=會勘, content=76線設備討論
-請假 上午特休 = create_work_report, work_type=請假, content=上午特休
+提醒紀錄查詢：
+- 「我今天做了什麼、今天做了什麼、今天提醒過什麼、今天有哪些紀錄」= query_reminder_history, range=today。
+- 「這週做了什麼、本週做了什麼、這禮拜做了什麼」= query_reminder_history, range=week。
+- 「這個月做了什麼、本月做了什麼」= query_reminder_history, range=month。
+- 如果問「還沒做什麼、還沒提醒、待辦」，是 query_todo，不是 query_reminder_history。
 
-如果是提醒、刪除、模板、選號，就回 unknown。
-如果不確定工作類型，need_confirm=true，confidence 低於 0.8。
-例如「去交控」「巡一下」「出去看設備」這種模糊句子，要請使用者選工作類型。
-語意句型規則：
+工作回報查詢：
+- 「今天工作回報、今日工作回報、今天誰出去、今天誰外出、今天大家去哪、今天誰去哪裡」= query_work_report, range=today, work_type=null。
+- 「本週工作回報、這週工作回報、這週大家去哪裡、這週誰出門、這禮拜誰出去」= query_work_report, range=week, work_type=null。
+- 「本月工作回報、這個月工作回報」= query_work_report, range=month, work_type=null。
+- 「今天誰請假」= query_work_report, range=today, work_type=請假。
+- 「這週誰請假」= query_work_report, range=week, work_type=請假。
+- 「今天誰去開會」= query_work_report, range=today, work_type=中分局會議。
+- 「今天誰去巡檢」= query_work_report, range=today, work_type=工作抽查。
+- 「今天誰去會勘」= query_work_report, range=today, work_type=會勘。
 
-「和{任何人}開會」
-「跟{任何人}開會」
-「與{任何人}開會」
-「和{任何單位}開會」
-「跟{任何單位}開會」
-「與{任何單位}開會」
-都屬於 create_work_report，
-work_type=中分局會議，
-content=保留原句，
-confidence=0.95，
-need_confirm=false。
-
-「和{任何人}巡檢」
-「跟{任何人}巡檢」
-「與{任何人}巡檢」
-「和{任何人}巡查」
-「跟{任何人}看設備」
-「去巡檢」
-「去看設備」
-「去現場看設備」
-都屬於 create_work_report，
-work_type=工作抽查，
-content=保留原句，
-confidence=0.95，
-need_confirm=false。
-
-「和{任何人}會勘」
-「跟{任何人}會勘」
-「與{任何人}會勘」
-「現場會勘」
-「去會勘」
-都屬於 create_work_report，
-work_type=會勘，
-content=保留原句，
-confidence=0.95，
-need_confirm=false。
-
-「請假」
-「休假」
-「特休」
-「病假」
-「補休」
-都屬於 create_work_report，
-work_type=請假，
-content=保留原句，
-confidence=0.95，
-need_confirm=false。
-
-查詢句型：
-「今天誰請假」
-「今天有誰請假」
-「這週誰請假」
-「本週有誰請假」
-都屬於 query_work_report，
-work_type=請假。
-如果使用者問「幾個、幾次、多少」代表 count_only=true。
-
-「我今天有幾個會勘」=
-intent=query_todo
-range=today
-keyword=會勘
-count_only=true
-
-「我今天喝幾次水」=
-intent=query_todo
-range=today
-keyword=喝水
-count_only=true
-
-「我今天還有幾個會要開」=
-intent=query_todo
-range=today
-keyword=開會
-count_only=true
-
-「我今天有沒有開會」=
-intent=query_todo
-range=today
-keyword=開會
-count_only=false
-「我今天做了什麼」
-「今天做了什麼」
-「今天提醒過什麼」
-「今天有哪些紀錄」
-都屬於 query_reminder_history，range=today。
-
-「這週做了什麼」
-「本週做了什麼」
-「這禮拜做了什麼」
-都屬於 query_reminder_history，range=week。
-
-「這個月做了什麼」
-「本月做了什麼」
-都屬於 query_reminder_history，range=month。
-
-如果問「還沒做什麼、還沒提醒、待辦」才是 query_todo。
+建立工作回報：
+- 「工作抽查 國6巡檢」= create_work_report, work_type=工作抽查, content=國6巡檢。
+- 「會勘 76線設備討論」= create_work_report, work_type=會勘, content=76線設備討論。
+- 「請假 上午特休」= create_work_report, work_type=請假, content=上午特休。
+- 「和{任何人}開會、跟{任何人}開會、與{任何單位}開會」= create_work_report, work_type=中分局會議, content=保留原句, confidence=0.95, need_confirm=false。
+- 「和{任何人}巡檢、跟{任何人}巡檢、去巡檢、去看設備、去現場看設備」= create_work_report, work_type=工作抽查, content=保留原句, confidence=0.95, need_confirm=false。
+- 「和{任何人}會勘、跟{任何人}會勘、現場會勘、去會勘」= create_work_report, work_type=會勘, content=保留原句, confidence=0.95, need_confirm=false。
+- 「請假、休假、特休、病假、補休」= create_work_report, work_type=請假, content=保留原句, confidence=0.95, need_confirm=false。
+- 如果像「出去一下、外出、處理事情」這種工作類型不明確，回 create_work_report, work_type=null, content=保留原句, confidence=0.5, need_confirm=true。
 `
       },
       {
@@ -1358,9 +1327,7 @@ count_only=false
   return JSON.parse(response.choices[0].message.content);
 }
 
-
 async function parseReminder(text) {
-  
   const now = new Date().toISOString();
 
   const response = await openai.chat.completions.create({
@@ -1399,99 +1366,6 @@ async function parseReminder(text) {
 11. 如果完全沒有日期但有時間，預設今天；如果已經過了，改成明天。
 12. 如果時間真的無法判斷，time 回 null。
 13. 每日重複提醒請回 repeat_type: "daily"，否則 repeat_type: "none"。
-查詢工作回報語意：
-
-「這週大家去哪裡」
-「這週誰出門」
-「今天誰出門」
-「今天大家去哪」
-「今天誰去哪裡」
-「這週誰去哪裡」
-都屬於 query_work_report。
-
-這類句子是在查詢工作回報，
-不是提醒。
-
-如果句子包含：
-今天 → range=today
-
-如果句子包含：
-這週、本週、這禮拜 → range=week
-
-如果沒有指定工作類型：
-work_type=null
-代表查詢所有工作回報。
-
-範例：
-
-「這週大家去哪裡」
-=
-{
-  "intent": "query_work_report",
-  "range": "week",
-  "work_type": null,
-  "confidence": 0.95,
-  "need_confirm": false
-}
-
-「今天誰出門」
-=
-{
-  "intent": "query_work_report",
-  "range": "today",
-  "work_type": null,
-  "confidence": 0.95,
-  "need_confirm": false
-}
-「今天誰出去」
-「今天誰外出」
-「今天誰去巡檢」
-「今天誰去開會」
-「今天誰去會勘」
-都屬於 query_work_report。
-
-如果句子包含：
-「開會」
-work_type=中分局會議
-
-如果句子包含：
-「巡檢、巡查、設備」
-work_type=工作抽查
-
-如果句子包含：
-「會勘」
-work_type=會勘
-
-如果只是：
-「今天誰出去」
-「今天誰外出」
-work_type=null
-代表查詢所有工作回報。
-
-「今天誰請假」
-「這週誰請假」
-都屬於 query_work_report，
-work_type=請假。
-
-「今天誰去開會」
-=
-{
-  "intent": "query_work_report",
-  "range": "today",
-  "work_type": "中分局會議",
-  "confidence": 0.95,
-  "need_confirm": false
-}
-
-「今天誰出去」
-=
-{
-  "intent": "query_work_report",
-  "range": "today",
-  "work_type": null,
-  "confidence": 0.95,
-  "need_confirm": false
-}
         `,
       },
       {
@@ -1906,6 +1780,7 @@ async function listTodayReminders(replyToken, userId) {
     .select("*")
     .eq("line_user_id", userId)
     .eq("status", "scheduled")
+    .is("summary_type", null)
     .gte("remind_at", startUtc)
     .lt("remind_at", endUtc)
     .order("remind_at", { ascending: true })
