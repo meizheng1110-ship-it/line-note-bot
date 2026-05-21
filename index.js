@@ -85,7 +85,20 @@ async function handleEvent(event) {
 
     
     const reminderDateQuery = parseReminderDateQuery(userText);
-    if (reminderDateQuery) {
+
+    const isReminderCreationText =
+      userText.includes("提醒我") ||
+      userText.includes("提醒") ||
+      userText.includes("每天") ||
+      userText.includes("每日") ||
+      userText.includes("每週") ||
+      userText.includes("每周") ||
+      userText.includes("每月") ||
+      userText.includes("分鐘後") ||
+      userText.includes("小時後") ||
+      userText.includes("天後");
+
+    if (reminderDateQuery && !isReminderCreationText) {
       await listReminderDateQuery(event.replyToken, userId, reminderDateQuery);
       return;
     }
