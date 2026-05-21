@@ -1216,6 +1216,63 @@ JSON 格式：
 如果是提醒、刪除、模板、選號，就回 unknown。
 如果不確定工作類型，need_confirm=true，confidence 低於 0.8。
 例如「去交控」「巡一下」「出去看設備」這種模糊句子，要請使用者選工作類型。
+語意句型規則：
+
+「和{任何人}開會」
+「跟{任何人}開會」
+「與{任何人}開會」
+「和{任何單位}開會」
+「跟{任何單位}開會」
+「與{任何單位}開會」
+都屬於 create_work_report，
+work_type=中分局會議，
+content=保留原句，
+confidence=0.95，
+need_confirm=false。
+
+「和{任何人}巡檢」
+「跟{任何人}巡檢」
+「與{任何人}巡檢」
+「和{任何人}巡查」
+「跟{任何人}看設備」
+「去巡檢」
+「去看設備」
+「去現場看設備」
+都屬於 create_work_report，
+work_type=工作抽查，
+content=保留原句，
+confidence=0.95，
+need_confirm=false。
+
+「和{任何人}會勘」
+「跟{任何人}會勘」
+「與{任何人}會勘」
+「現場會勘」
+「去會勘」
+都屬於 create_work_report，
+work_type=會勘，
+content=保留原句，
+confidence=0.95，
+need_confirm=false。
+
+「請假」
+「休假」
+「特休」
+「病假」
+「補休」
+都屬於 create_work_report，
+work_type=請假，
+content=保留原句，
+confidence=0.95，
+need_confirm=false。
+
+查詢句型：
+「今天誰請假」
+「今天有誰請假」
+「這週誰請假」
+「本週有誰請假」
+都屬於 query_work_report，
+work_type=請假。
 `
       },
       {
