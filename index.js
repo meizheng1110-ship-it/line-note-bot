@@ -49,7 +49,10 @@ async function handleEvent(event) {
     const userText = event.message.text.trim();
     const userId = event.source.groupId || event.source.userId;
 
-    if (/^類型[1-6]$/.test(userText)) {
+    if (
+  global.aiConfirmCache?.[userId] &&
+  /^(類型)?[1-6]$/.test(userText)
+) {
   const cache = global.aiConfirmCache?.[userId];
 
   if (!cache) {
@@ -66,7 +69,7 @@ async function handleEvent(event) {
     6: "其他",
   };
 
-  const selectedNumber = userText.replace("類型", "");
+  const selectedNumber = userText.replace("類型", "").trim();
   const selectedType = typeMap[selectedNumber];
 
   await createWorkReport(event.replyToken, event, {
