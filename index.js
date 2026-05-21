@@ -710,44 +710,7 @@ async function listWorkReports(replyToken, event, text) {
   await reply(replyToken, formatWorkReports(data, text));
 }
 
-function getReminderSummaryType(title) {
-  if (!title) return null;
 
-  if (
-    title.includes("今天待辦") ||
-    title.includes("今日待辦") ||
-    title.includes("今天的待辦") ||
-    title.includes("今日的待辦") ||
-    title.includes("今天的待辦事項") ||
-    title.includes("今日的待辦事項") ||
-    title.includes("當日待辦")
-  ) {
-    return "today";
-  }
-
-  if (
-    title.includes("明天待辦") ||
-    title.includes("明日待辦") ||
-    title.includes("明天的待辦") ||
-    title.includes("明日的待辦") ||
-    title.includes("明天的待辦事項") ||
-    title.includes("明日的待辦事項") ||
-    title.includes("隔日待辦")
-  ) {
-    return "tomorrow";
-  }
-
-  if (
-    title.includes("本週待辦") ||
-    title.includes("本周待辦") ||
-    title.includes("這週待辦") ||
-    title.includes("這禮拜待辦")
-  ) {
-    return "week";
-  }
-
-  return null;
-}
 function getRepeatText(result) {
   if (result.repeat_type === "daily") return "\n重複：每天";
   if (result.repeat_type === "weekly") return "\n重複：每週";
@@ -1158,44 +1121,7 @@ async function parseReminder(text) {
 }
 
 
-function getReminderSummaryType(title) {
-  if (!title) return null;
 
-  if (
-    title.includes("今天待辦") ||
-    title.includes("今日待辦") ||
-    title.includes("今天的待辦") ||
-    title.includes("今日的待辦") ||
-    title.includes("今天的待辦事項") ||
-    title.includes("今日的待辦事項") ||
-    title.includes("當日待辦")
-  ) {
-    return "today";
-  }
-
-  if (
-    title.includes("明天待辦") ||
-    title.includes("明日待辦") ||
-    title.includes("明天的待辦") ||
-    title.includes("明日的待辦") ||
-    title.includes("明天的待辦事項") ||
-    title.includes("明日的待辦事項") ||
-    title.includes("隔日待辦")
-  ) {
-    return "tomorrow";
-  }
-
-  if (
-    title.includes("本週待辦") ||
-    title.includes("本周待辦") ||
-    text.includes("這週待辦") ||
-    text.includes("這禮拜待辦")
-  ) {
-    return "week";
-  }
-
-  return null;
-}
 
 function getDateRangeUtc(addDays = 0) {
   const now = new Date();
@@ -1246,6 +1172,117 @@ function getReminderWeekRangeUtc() {
     endUtc: new Date(endTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString(),
   };
 }
+
+function parseReminderDateQuery(text) {
+  if (
+    text.includes("今天待辦") ||
+    text.includes("今日待辦") ||
+    text.includes("當日待辦") ||
+    text.includes("今天的待辦") ||
+    text.includes("今日的待辦") ||
+    text.includes("今天的待辦事項") ||
+    text.includes("今日的待辦事項")
+  ) {
+    return { type: "date", days: 0, title: "今日待辦" };
+  }
+
+  if (
+    text.includes("明天待辦") ||
+    text.includes("明日待辦") ||
+    text.includes("隔日待辦") ||
+    text.includes("明天的待辦") ||
+    text.includes("明日的待辦") ||
+    text.includes("明天的待辦事項") ||
+    text.includes("隔日待辦事項")
+  ) {
+    return { type: "date", days: 1, title: "明日待辦" };
+  }
+
+  if (
+    text.includes("本週待辦") ||
+    text.includes("本周待辦") ||
+    text.includes("這週待辦") ||
+    text.includes("這禮拜待辦")
+  ) {
+    return { type: "week", title: "本週待辦" };
+  }
+
+  return null;
+}
+
+function getReminderSummaryType(title) {
+  if (!title) return null;
+
+  if (
+    title.includes("今天待辦") ||
+    title.includes("今日待辦") ||
+    title.includes("今天的待辦") ||
+    title.includes("今日的待辦") ||
+    title.includes("今天的待辦事項") ||
+    title.includes("今日的待辦事項") ||
+    title.includes("當日待辦")
+  ) {
+    return "today";
+  }
+
+  if (
+    title.includes("明天待辦") ||
+    title.includes("明日待辦") ||
+    title.includes("明天的待辦") ||
+    title.includes("明日的待辦") ||
+    title.includes("明天的待辦事項") ||
+    title.includes("明日的待辦事項") ||
+    title.includes("隔日待辦")
+  ) {
+    return "tomorrow";
+  }
+
+  if (
+    title.includes("本週待辦") ||
+    title.includes("本周待辦") ||
+    title.includes("這週待辦") ||
+    title.includes("這禮拜待辦")
+  ) {
+    return "week";
+  }
+
+  return null;
+}
+
+async function getTodoSummaryText(userId, summary) {
+  const range = summary.type === "week"
+    ? getReminderWeekRangeUtc()
+    : getDateRangeUtc(summary.days);
+
+  const { data, error } = await supabase
+    .from("reminders")
+    .select("*")
+    .eq("line_user_id", userId)
+    .eq("status", "scheduled")
+    .is("summary_type", null)
+    .gte("remind_at", range.startUtc)
+    .lt("remind_at", range.endUtc)
+    .order("remind_at", { ascending: true });
+
+  if (error) {
+    console.error("GET TODO SUMMARY ERROR:", error);
+    return `${summary.title}：查詢失敗`;
+  }
+
+  if (!data || data.length === 0) {
+    return `${summary.title}：目前沒有待辦事項`;
+  }
+
+  const text = data
+    .map((item, index) => {
+      return `${index + 1}. ${item.title}\n時間：${formatTaipeiTime(item.remind_at)}`;
+    })
+    .join("\n\n");
+
+  return `${summary.title}：\n\n${text}`;
+}
+
+
 
 async function listReminderDateQuery(replyToken, userId, query) {
   const range = query.type === "week"
