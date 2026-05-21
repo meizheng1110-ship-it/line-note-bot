@@ -49,7 +49,62 @@ async function handleEvent(event) {
     const userText = event.message.text.trim();
     const userId = event.source.groupId || event.source.userId;
 
+    if (/^類型[1-6]$/.test(userText)) {
+  const cache = global.aiConfirmCache?.[userId];
+
+  if (!cache) {
+    await reply(event.replyToken, "目前沒有等待確認的工作回報");
+    return;
+  }
+
+  const typeMap = {
+    1: "安衛內業檢查",
+    2: "工作抽查",
+    3: "會勘",
+    4: "中分局會議",
+    5: "請假",
+    6: "其他",
+  };
+
+  const selectedNumber = userText.replace("類型", "");
+  const selectedType = typeMap[selectedNumber];
+
+  await createWorkReport(event.replyToken, event, {
+    type: selectedType,
+    content: cache.content,
+  });
+
+  delete global.aiConfirmCache[userId];
+  return;
+}
     const aiIntent = await parseUserIntent(userText);
+    console.log("AI INTENT:", aiIntent);
+    if (
+  aiIntent.need_confirm === true ||
+  (aiIntent.confidence !== undefined && aiIntent.confidence < 0.8)
+) {
+  global.aiConfirmCache = global.aiConfirmCache || {};
+
+  global.aiConfirmCache[userId] = {
+    raw_text: userText,
+    content: aiIntent.content || userText,
+  };
+
+  await reply(
+    event.replyToken,
+    `我不太確定你要建立哪一種工作回報，請選擇：
+
+1. 安衛內業檢查
+2. 工作抽查
+3. 會勘
+4. 中分局會議
+5. 請假
+6. 其他
+
+請輸入：類型1`
+  );
+  return;
+}
 
   if (aiIntent.intent === "query_todo") {
   if (aiIntent.range === "today") {
@@ -1135,7 +1190,9 @@ JSON 格式：
   "intent": "query_todo|query_work_report|create_work_report|unknown",
   "range": "today|tomorrow|week|month|null",
   "work_type": null,
-  "content": null
+  "content": null,
+  "confidence": 0.0,
+  "need_confirm": false
 }
 
 規則：
@@ -1151,6 +1208,8 @@ JSON 格式：
 請假 上午特休 = create_work_report, work_type=請假, content=上午特休
 
 如果是提醒、刪除、模板、選號，就回 unknown。
+如果不確定工作類型，need_confirm=true，confidence 低於 0.8。
+例如「去交控」「巡一下」「出去看設備」這種模糊句子，要請使用者選工作類型。
 `
       },
       {
