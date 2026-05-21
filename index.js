@@ -706,21 +706,33 @@ function getReminderSummaryType(title) {
     title.includes("今天的待辦") ||
     title.includes("今日的待辦") ||
     title.includes("當日待辦") ||
+    title.includes("今天的待辦事項") ||
+    title.includes("今日的待辦事項") ||
+    title.includes("今天的待辦") ||
+    title.includes("今日的待辦") ||
     title.includes("今天要做的事")
+
   ) {
-    return "today";
+    return { type: "date", days: 0, title: "今日待辦" };
   }
 
   if (
-    title.includes("明天待辦") ||
-    title.includes("明日待辦") ||
-    title.includes("明天的待辦") ||
-    title.includes("隔日待辦") ||
-    title.includes("隔天待辦") ||
-    title.includes("明天要做的事")
-  ) {
-    return "tomorrow";
-  }
+  text.includes("明天待辦") ||
+  text.includes("明日待辦") ||
+  text.includes("隔日待辦") ||
+  text.includes("明天的待辦") ||
+  text.includes("明日的待辦") ||
+  text.includes("隔日的待辦") ||
+  text.includes("明天待辦事項") ||
+  text.includes("明天的待辦事項") ||
+  text.includes("明日待辦事項") ||
+  text.includes("隔日待辦事項") ||
+  text.includes("明天代辦") ||
+  text.includes("明日代辦") ||
+  text.includes("明天要做的事")
+) {
+  return { type: "date", days: 1, title: "明日待辦" };
+}
 
   if (
     title.includes("本週待辦") ||
@@ -1145,16 +1157,57 @@ async function parseReminder(text) {
 
 
 function parseReminderDateQuery(text) {
-  if (text.includes("本週待辦") || text.includes("本週代辦")) {
-    return { type: "week", title: "本週待辦" };
+
+  // 今天待辦
+  if (
+    text.includes("今天待辦") ||
+    text.includes("今日待辦") ||
+    text.includes("當日待辦") ||
+    text.includes("今天的待辦") ||
+    text.includes("今日的待辦") ||
+    text.includes("今天待辦事項") ||
+    text.includes("今天的待辦事項") ||
+    text.includes("今日待辦事項") ||
+    text.includes("今日的待辦事項") ||
+    text.includes("今天代辦") ||
+    text.includes("今日代辦") ||
+    text.includes("今天的代辦") ||
+    text.includes("今天要做的事")
+  ) {
+    return { type: "date", days: 0, title: "今日待辦" };
   }
 
-  if (text.includes("明天待辦") || text.includes("明日待辦") || text.includes("隔日待辦")) {
+  // 明天待辦
+  if (
+    text.includes("明天待辦") ||
+    text.includes("明日待辦") ||
+    text.includes("隔日待辦") ||
+    text.includes("明天的待辦") ||
+    text.includes("明日的待辦") ||
+    text.includes("隔日的待辦") ||
+    text.includes("明天待辦事項") ||
+    text.includes("明天的待辦事項") ||
+    text.includes("明日待辦事項") ||
+    text.includes("隔日待辦事項") ||
+    text.includes("明天代辦") ||
+    text.includes("明日代辦") ||
+    text.includes("明天要做的事")
+  ) {
     return { type: "date", days: 1, title: "明日待辦" };
   }
 
-  if (text.includes("今天待辦") || text.includes("今日待辦") || text.includes("當日待辦")) {
-    return { type: "date", days: 0, title: "今日待辦" };
+  // 本週待辦
+  if (
+    text.includes("本週待辦") ||
+    text.includes("本周待辦") ||
+    text.includes("這週待辦") ||
+    text.includes("這禮拜待辦") ||
+    text.includes("本週待辦事項") ||
+    text.includes("本周待辦事項") ||
+    text.includes("本週代辦") ||
+    text.includes("本週要做的事")
+  ) {
+    return { type: "week", title: "本週待辦" };
   }
 
   return null;
