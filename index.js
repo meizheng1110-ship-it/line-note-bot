@@ -83,9 +83,12 @@ async function handleEvent(event) {
     const aiIntent = await parseUserIntent(userText);
     console.log("AI INTENT:", aiIntent);
     if (
-  aiIntent.need_confirm === true ||
-  (aiIntent.confidence !== undefined && aiIntent.confidence < 0.8)
-) {
+    aiIntent.intent === "create_work_report" &&
+    (
+      aiIntent.need_confirm === true ||
+      (aiIntent.confidence !== undefined && aiIntent.confidence < 0.8)
+    )
+    ) {
   global.aiConfirmCache = global.aiConfirmCache || {};
 
   global.aiConfirmCache[userId] = {
