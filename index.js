@@ -49,6 +49,56 @@ async function handleEvent(event) {
     const userText = event.message.text.trim();
     const userId = event.source.groupId || event.source.userId;
 
+    const aiIntent = await parseUserIntent(userText);
+
+  if (aiIntent.intent === "query_todo") {
+  if (aiIntent.range === "today") {
+    await listReminderDateQuery(event.replyToken, userId, {
+      type: "date",
+      days: 0,
+      title: "今日待辦",
+    });
+    return;
+  }
+
+  if (aiIntent.range === "tomorrow") {
+    await listReminderDateQuery(event.replyToken, userId, {
+      type: "date",
+      days: 1,
+      title: "明日待辦",
+    });
+    return;
+  }
+
+  if (aiIntent.range === "week") {
+    await listReminderDateQuery(event.replyToken, userId, {
+      type: "week",
+      title: "本週待辦",
+    });
+    return;
+  }
+}
+
+if (aiIntent.intent === "query_work_report") {
+  if (aiIntent.range === "today") {
+    await listWorkReports(event.replyToken, event, "今日回報");
+    return;
+  }
+
+  if (aiIntent.range === "week") {
+    await listWorkReports(event.replyToken, event, "本週回報");
+    return;
+  }
+}
+
+if (aiIntent.intent === "create_work_report") {
+  await createWorkReport(event.replyToken, event, {
+    type: aiIntent.work_type,
+    content: aiIntent.content,
+  });
+  return;
+}
+
     if (userText.startsWith("新增回報模板")) {
       await createWorkReportTemplate(event.replyToken, event, userText);
       return;
@@ -1064,7 +1114,59 @@ function formatTaipeiTime(value) {
   }).format(date);
 }
 
+async function parseUserIntent(userText) {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4.1-mini",
+    messages: [
+      {
+        role: "system",
+        content: `
+你是 LINE BOT 指令解析器。
+請只回 JSON，不要解釋。
+
+支援 intent：
+query_todo
+query_work_report
+create_work_report
+unknown
+
+JSON 格式：
+{
+  "intent": "query_todo|query_work_report|create_work_report|unknown",
+  "range": "today|tomorrow|week|month|null",
+  "work_type": null,
+  "content": null
+}
+
+規則：
+今天待辦、今日待辦、今天的待辦事項 = query_todo, range=today
+明天待辦、隔日待辦 = query_todo, range=tomorrow
+本週待辦 = query_todo, range=week
+
+今天工作回報、今日工作回報 = query_work_report, range=today
+本週工作回報、這週工作回報 = query_work_report, range=week
+
+工作抽查 國6巡檢 = create_work_report, work_type=工作抽查, content=國6巡檢
+會勘 76線設備討論 = create_work_report, work_type=會勘, content=76線設備討論
+請假 上午特休 = create_work_report, work_type=請假, content=上午特休
+
+如果是提醒、刪除、模板、選號，就回 unknown。
+`
+      },
+      {
+        role: "user",
+        content: userText,
+      },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  return JSON.parse(response.choices[0].message.content);
+}
+
+
 async function parseReminder(text) {
+  
   const now = new Date().toISOString();
 
   const response = await openai.chat.completions.create({
