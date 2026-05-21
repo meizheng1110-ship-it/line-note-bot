@@ -829,6 +829,7 @@ function cleanReminderTitle(title) {
   return title
     .trim()
     .replace(/^(提醒我|跟我說|告訴我|叫我|提醒|要|幫我|請我)/, "")
+    .replaceAll("代辦", "待辦")
     .trim();
 }
 
