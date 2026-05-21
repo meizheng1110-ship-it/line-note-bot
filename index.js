@@ -1273,9 +1273,9 @@ async function listReminderDateQuery(replyToken, userId, query) {
     .select("*")
     .eq("line_user_id", userId)
     .eq("status", "scheduled")
+    .is("summary_type", null)
     .gte("remind_at", range.startUtc)
     .lt("remind_at", range.endUtc)
-    .order("remind_at", { ascending: true });
 
   if (error) {
     console.error(error);
