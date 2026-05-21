@@ -802,7 +802,7 @@ function parseRelativeReminder(text) {
 
   const amount = parseNumberText(match[1]);
   const unit = match[2];
-  const title = match[3].trim();
+  const title = cleanReminderTitle(match[3]);
 
   if (!amount || !title) return null;
 
