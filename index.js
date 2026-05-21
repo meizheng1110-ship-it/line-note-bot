@@ -834,7 +834,7 @@ function cleanReminderTitle(title) {
 
 function parseDailyReminder(text) {
   const match = text.match(
-    /(?:每天|每日)\s*(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十百]+)\s*點\s*(?:(半)|([0-9一二兩三四五六七八九十百]+)\s*分?)?\s*(.*)/
+    /(?:每天|每日)\s*(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十百]+)\s*點\s*(?:([0-9一二兩三四五六七八九十百]+)\s*分?|半)?\s*(.*)/
   );
 
   if (!match) return null;
@@ -843,13 +843,14 @@ function parseDailyReminder(text) {
   let hour = parseNumberText(match[2]);
 
   let minute = 0;
-  if (match[3]) {
+
+  if (text.includes("半")) {
     minute = 30;
-  } else if (match[4]) {
-    minute = parseNumberText(match[4]);
+  } else if (match[3]) {
+    minute = parseNumberText(match[3]);
   }
 
-  const title = cleanReminderTitle(match[5]);
+  const title = cleanReminderTitle(match[4]);
 
   if (hour === null || hour === undefined || !title) return null;
   if (minute === null || minute === undefined) return null;
