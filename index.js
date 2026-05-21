@@ -102,12 +102,12 @@ async function handleEvent(event) {
       await listReminderDateQuery(event.replyToken, userId, reminderDateQuery);
       return;
     }
-    if (isTodayReminderIntent(userText)) {
+    if (isTodayReminderIntent(userText) && !isReminderCreationText) {
       await listTodayReminders(event.replyToken, userId);
       return;
     }
 
-    if (isFutureReminderIntent(userText)) {
+    if (isFutureReminderIntent(userText) && !isReminderCreationText) {
       await listFutureReminders(event.replyToken, userId);
       return;
     }
