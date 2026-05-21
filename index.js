@@ -32,6 +32,10 @@ app.get("/", (req, res) => {
   res.send("LINE BOT RUNNING");
 });
 
+app.get("/health", (req, res) => {
+  res.status(200).send("OK");
+});
+
 app.post("/webhook", line.middleware(config), async (req, res) => {
   await Promise.all(req.body.events.map(handleEvent));
   res.status(200).end();
@@ -79,6 +83,12 @@ async function handleEvent(event) {
       return;
     }
 
+    
+    const reminderDateQuery = parseReminderDateQuery(userText);
+    if (reminderDateQuery) {
+      await listReminderDateQuery(event.replyToken, userId, reminderDateQuery);
+      return;
+    }
     if (isTodayReminderIntent(userText)) {
       await listTodayReminders(event.replyToken, userId);
       return;
@@ -1093,6 +1103,104 @@ async function parseReminder(text) {
   return JSON.parse(content);
 }
 
+
+function parseReminderDateQuery(text) {
+  if (text.includes("本週待辦") || text.includes("本週代辦")) {
+    return { type: "week", title: "本週待辦" };
+  }
+
+  if (text.includes("明天待辦") || text.includes("明日待辦") || text.includes("隔日待辦")) {
+    return { type: "date", days: 1, title: "明日待辦" };
+  }
+
+  if (text.includes("今天待辦") || text.includes("今日待辦") || text.includes("當日待辦")) {
+    return { type: "date", days: 0, title: "今日待辦" };
+  }
+
+  return null;
+}
+
+function getDateRangeUtc(addDays = 0) {
+  const now = new Date();
+  const taipeiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+
+  const startTaipei = new Date(Date.UTC(
+    taipeiNow.getUTCFullYear(),
+    taipeiNow.getUTCMonth(),
+    taipeiNow.getUTCDate() + addDays,
+    0, 0, 0
+  ));
+
+  const endTaipei = new Date(Date.UTC(
+    taipeiNow.getUTCFullYear(),
+    taipeiNow.getUTCMonth(),
+    taipeiNow.getUTCDate() + addDays + 1,
+    0, 0, 0
+  ));
+
+  return {
+    startUtc: new Date(startTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+    endUtc: new Date(endTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+  };
+}
+
+function getReminderWeekRangeUtc() {
+  const now = new Date();
+  const taipeiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const day = taipeiNow.getUTCDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+
+  const startTaipei = new Date(Date.UTC(
+    taipeiNow.getUTCFullYear(),
+    taipeiNow.getUTCMonth(),
+    taipeiNow.getUTCDate() + diffToMonday,
+    0, 0, 0
+  ));
+
+  const endTaipei = new Date(Date.UTC(
+    taipeiNow.getUTCFullYear(),
+    taipeiNow.getUTCMonth(),
+    taipeiNow.getUTCDate() + 7,
+    0, 0, 0
+  ));
+
+  return {
+    startUtc: new Date(startTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+    endUtc: new Date(endTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+  };
+}
+
+async function listReminderDateQuery(replyToken, userId, query) {
+  const range = query.type === "week"
+    ? getReminderWeekRangeUtc()
+    : getDateRangeUtc(query.days);
+
+  const { data, error } = await supabase
+    .from("reminders")
+    .select("*")
+    .eq("line_user_id", userId)
+    .eq("status", "scheduled")
+    .gte("remind_at", range.startUtc)
+    .lt("remind_at", range.endUtc)
+    .order("remind_at", { ascending: true });
+
+  if (error) {
+    console.error(error);
+    await reply(replyToken, "查詢待辦事項失敗");
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    await reply(replyToken, `${query.title}：目前沒有待辦事項`);
+    return;
+  }
+
+  const text = data.map((item, index) => {
+    return `${index + 1}. ${item.title}\n時間：${formatTaipeiTime(item.remind_at)}`;
+  }).join("\n\n");
+
+  await reply(replyToken, `${query.title}：\n\n${text}`);
+}
 async function listTodayReminders(replyToken, userId) {
   const { startUtc, endUtc } = getTodayRangeUtc();
 
