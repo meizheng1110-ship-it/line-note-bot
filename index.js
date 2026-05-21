@@ -1354,6 +1354,57 @@ async function parseReminder(text) {
 11. 如果完全沒有日期但有時間，預設今天；如果已經過了，改成明天。
 12. 如果時間真的無法判斷，time 回 null。
 13. 每日重複提醒請回 repeat_type: "daily"，否則 repeat_type: "none"。
+查詢工作回報語意：
+
+「今天誰出去」
+「今天誰外出」
+「今天誰去巡檢」
+「今天誰去開會」
+「今天誰去會勘」
+都屬於 query_work_report。
+
+如果句子包含：
+「開會」
+work_type=中分局會議
+
+如果句子包含：
+「巡檢、巡查、設備」
+work_type=工作抽查
+
+如果句子包含：
+「會勘」
+work_type=會勘
+
+如果只是：
+「今天誰出去」
+「今天誰外出」
+work_type=null
+代表查詢所有工作回報。
+
+「今天誰請假」
+「這週誰請假」
+都屬於 query_work_report，
+work_type=請假。
+
+「今天誰去開會」
+=
+{
+  "intent": "query_work_report",
+  "range": "today",
+  "work_type": "中分局會議",
+  "confidence": 0.95,
+  "need_confirm": false
+}
+
+「今天誰出去」
+=
+{
+  "intent": "query_work_report",
+  "range": "today",
+  "work_type": null,
+  "confidence": 0.95,
+  "need_confirm": false
+}
         `,
       },
       {
