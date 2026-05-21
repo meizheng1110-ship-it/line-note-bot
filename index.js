@@ -166,6 +166,8 @@ async function handleEvent(event) {
       return;
     }
 
+    const summaryType = getReminderSummaryType(result.title);
+
     const { error } = await supabase.from("reminders").insert({
       line_user_id: userId,
       raw_text: userText,
@@ -175,6 +177,7 @@ async function handleEvent(event) {
       repeat_type: result.repeat_type || "none",
       repeat_time: result.repeat_time || null,
       repeat_day: result.repeat_day || null,
+      summary_type: summaryType,
     });
 
     if (error) throw error;
@@ -694,6 +697,43 @@ async function listWorkReports(replyToken, event, text) {
   await reply(replyToken, formatWorkReports(data, text));
 }
 
+function getReminderSummaryType(title) {
+  if (!title) return null;
+
+  if (
+    title.includes("今天待辦") ||
+    title.includes("今日待辦") ||
+    title.includes("今天的待辦") ||
+    title.includes("今日的待辦") ||
+    title.includes("當日待辦") ||
+    title.includes("今天要做的事")
+  ) {
+    return "today";
+  }
+
+  if (
+    title.includes("明天待辦") ||
+    title.includes("明日待辦") ||
+    title.includes("明天的待辦") ||
+    title.includes("隔日待辦") ||
+    title.includes("隔天待辦") ||
+    title.includes("明天要做的事")
+  ) {
+    return "tomorrow";
+  }
+
+  if (
+    title.includes("本週待辦") ||
+    title.includes("本周待辦") ||
+    title.includes("這週待辦") ||
+    title.includes("這禮拜待辦") ||
+    title.includes("本週要做的事")
+  ) {
+    return "week";
+  }
+
+  return null;
+}
 function getRepeatText(result) {
   if (result.repeat_type === "daily") return "\n重複：每天";
   if (result.repeat_type === "weekly") return "\n重複：每週";
@@ -1397,12 +1437,37 @@ cron.schedule("*/15 * * * * *", async () => {
           })
           .eq("id", reminder.id);
 
+        let pushText = `提醒你：${reminder.title}`;
+
+        if (reminder.summary_type === "today") {
+          pushText = await getTodoSummaryText(reminder.line_user_id, {
+            type: "date",
+            days: 0,
+            title: "今日待辦",
+          });
+        }
+
+        if (reminder.summary_type === "tomorrow") {
+          pushText = await getTodoSummaryText(reminder.line_user_id, {
+            type: "date",
+            days: 1,
+            title: "明日待辦",
+          });
+        }
+
+        if (reminder.summary_type === "week") {
+          pushText = await getTodoSummaryText(reminder.line_user_id, {
+            type: "week",
+            title: "本週待辦",
+          });
+        }
+
         await client.pushMessage({
           to: reminder.line_user_id,
           messages: [
             {
               type: "text",
-              text: `提醒你：${reminder.title}`,
+              text: pushText,
             },
           ],
         });
