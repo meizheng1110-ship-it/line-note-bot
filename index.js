@@ -82,6 +82,18 @@ async function handleEvent(event) {
 }
     const aiIntent = await parseUserIntent(userText);
     console.log("AI INTENT:", aiIntent);
+    if (aiIntent.intent === "query_work_report") {
+    await listWorkReports(
+      event.replyToken,
+      event,
+      {
+        range: aiIntent.range,
+        work_type: aiIntent.work_type,
+      }
+    );
+
+    return;
+  }
     if (
     aiIntent.intent === "create_work_report" &&
     (
@@ -1356,6 +1368,48 @@ async function parseReminder(text) {
 13. 每日重複提醒請回 repeat_type: "daily"，否則 repeat_type: "none"。
 查詢工作回報語意：
 
+「這週大家去哪裡」
+「這週誰出門」
+「今天誰出門」
+「今天大家去哪」
+「今天誰去哪裡」
+「這週誰去哪裡」
+都屬於 query_work_report。
+
+這類句子是在查詢工作回報，
+不是提醒。
+
+如果句子包含：
+今天 → range=today
+
+如果句子包含：
+這週、本週、這禮拜 → range=week
+
+如果沒有指定工作類型：
+work_type=null
+代表查詢所有工作回報。
+
+範例：
+
+「這週大家去哪裡」
+=
+{
+  "intent": "query_work_report",
+  "range": "week",
+  "work_type": null,
+  "confidence": 0.95,
+  "need_confirm": false
+}
+
+「今天誰出門」
+=
+{
+  "intent": "query_work_report",
+  "range": "today",
+  "work_type": null,
+  "confidence": 0.95,
+  "need_confirm": false
+}
 「今天誰出去」
 「今天誰外出」
 「今天誰去巡檢」
