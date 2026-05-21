@@ -42,6 +42,15 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 async function handleEvent(event) {
+  if (
+  userText.includes("今日紀錄") ||
+  userText.includes("今天紀錄") ||
+  userText.includes("今天提醒紀錄") ||
+  userText.includes("今天做了什麼")
+) {
+  await listTodayReminderHistory(event.replyToken, userId);
+  return;
+}
   if (event.type !== "message") return;
   if (event.message.type !== "text") return;
 
@@ -82,6 +91,14 @@ async function handleEvent(event) {
 }
     const aiIntent = await parseUserIntent(userText);
     console.log("AI INTENT:", aiIntent);
+    if (aiIntent.intent === "query_reminder_history") {
+    await listReminderHistory(event.replyToken, userId, {
+      range: aiIntent.range || "today",
+      keyword: aiIntent.keyword || null,
+      count_only: aiIntent.count_only || false,
+    });
+    return;
+  }
     if (aiIntent.intent === "query_work_report") {
     await listWorkReports(
       event.replyToken,
@@ -1312,6 +1329,22 @@ intent=query_todo
 range=today
 keyword=開會
 count_only=false
+「我今天做了什麼」
+「今天做了什麼」
+「今天提醒過什麼」
+「今天有哪些紀錄」
+都屬於 query_reminder_history，range=today。
+
+「這週做了什麼」
+「本週做了什麼」
+「這禮拜做了什麼」
+都屬於 query_reminder_history，range=week。
+
+「這個月做了什麼」
+「本月做了什麼」
+都屬於 query_reminder_history，range=month。
+
+如果問「還沒做什麼、還沒提醒、待辦」才是 query_todo。
 `
       },
       {
@@ -1673,6 +1706,119 @@ async function listReminderDateQuery(replyToken, userId, query) {
 
   await reply(replyToken, `${query.title}：\n\n${text}`);
 }
+async function listReminderHistory(replyToken, userId, options) {
+  const range = getReminderHistoryRangeUtc(options.range);
+
+  let query = supabase
+    .from("reminders")
+    .select("*")
+    .eq("line_user_id", userId)
+    .in("status", ["scheduled", "reminded"])
+    .gte("remind_at", range.startUtc)
+    .lt("remind_at", range.endUtc)
+    .order("remind_at", { ascending: true });
+
+  if (options.keyword) {
+    query = query.ilike("title", `%${options.keyword}%`);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("LIST REMINDER HISTORY ERROR:", error);
+    await reply(replyToken, "查詢提醒紀錄失敗");
+    return;
+  }
+
+  const titleMap = {
+    today: "今日紀錄",
+    week: "本週紀錄",
+    month: "本月紀錄",
+  };
+
+  const title = titleMap[options.range] || "提醒紀錄";
+
+  if (options.count_only) {
+    await reply(replyToken, `${title}共有 ${data?.length || 0} 筆`);
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    await reply(replyToken, `${title}：目前沒有資料`);
+    return;
+  }
+
+  const text = data
+    .map((item, index) => {
+      const statusText = item.status === "reminded" ? "已提醒" : "未提醒";
+      return `${index + 1}. ${item.title}
+時間：${formatTaipeiTime(item.remind_at)}
+狀態：${statusText}`;
+    })
+    .join("\n\n");
+
+  await reply(replyToken, `${title}：\n\n${text}`);
+}
+
+function getReminderHistoryRangeUtc(range) {
+  const now = new Date();
+  const taipeiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+
+  let startTaipei;
+  let endTaipei;
+
+  if (range === "week") {
+    const dayOfWeek = taipeiNow.getUTCDay();
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+    startTaipei = new Date(Date.UTC(
+      taipeiNow.getUTCFullYear(),
+      taipeiNow.getUTCMonth(),
+      taipeiNow.getUTCDate() + diffToMonday,
+      0, 0, 0
+    ));
+
+    endTaipei = new Date(Date.UTC(
+      taipeiNow.getUTCFullYear(),
+      taipeiNow.getUTCMonth(),
+      taipeiNow.getUTCDate() + 1,
+      0, 0, 0
+    ));
+  } else if (range === "month") {
+    startTaipei = new Date(Date.UTC(
+      taipeiNow.getUTCFullYear(),
+      taipeiNow.getUTCMonth(),
+      1,
+      0, 0, 0
+    ));
+
+    endTaipei = new Date(Date.UTC(
+      taipeiNow.getUTCFullYear(),
+      taipeiNow.getUTCMonth(),
+      taipeiNow.getUTCDate() + 1,
+      0, 0, 0
+    ));
+  } else {
+    startTaipei = new Date(Date.UTC(
+      taipeiNow.getUTCFullYear(),
+      taipeiNow.getUTCMonth(),
+      taipeiNow.getUTCDate(),
+      0, 0, 0
+    ));
+
+    endTaipei = new Date(Date.UTC(
+      taipeiNow.getUTCFullYear(),
+      taipeiNow.getUTCMonth(),
+      taipeiNow.getUTCDate() + 1,
+      0, 0, 0
+    ));
+  }
+
+  return {
+    startUtc: new Date(startTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+    endUtc: new Date(endTaipei.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+  };
+}
 async function listReminderDateQueryWithFilter(replyToken, userId, query) {
   const range = query.range === "week"
     ? getReminderWeekRangeUtc()
@@ -1719,6 +1865,39 @@ async function listReminderDateQueryWithFilter(replyToken, userId, query) {
 
   await reply(replyToken, text);
 }
+async function listTodayReminderHistory(replyToken, userId) {
+  const { startUtc, endUtc } = getTodayRangeUtc();
+
+  const { data, error } = await supabase
+    .from("reminders")
+    .select("*")
+    .eq("line_user_id", userId)
+    .in("status", ["scheduled", "reminded"])
+    .gte("remind_at", startUtc)
+    .lt("remind_at", endUtc)
+    .order("remind_at", { ascending: true });
+
+  if (error) {
+    console.error(error);
+    await reply(replyToken, "查詢今日紀錄失敗");
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    await reply(replyToken, "今天沒有提醒紀錄");
+    return;
+  }
+
+  const text = data
+    .map((item, index) => {
+      const statusText = item.status === "reminded" ? "已提醒" : "未提醒";
+      return `${index + 1}. ${item.title}\n時間：${formatTaipeiTime(item.remind_at)}\n狀態：${statusText}`;
+    })
+    .join("\n\n");
+
+  await reply(replyToken, `今日紀錄：\n\n${text}`);
+}
+
 async function listTodayReminders(replyToken, userId) {
   const { startUtc, endUtc } = getTodayRangeUtc();
 
