@@ -1198,7 +1198,9 @@ JSON 格式：
   "work_type": null,
   "content": null,
   "confidence": 0.0,
-  "need_confirm": false
+  "need_confirm": false,
+  "keyword": null,
+  "count_only": false
 }
 
 規則：
@@ -1273,6 +1275,31 @@ need_confirm=false。
 「本週有誰請假」
 都屬於 query_work_report，
 work_type=請假。
+如果使用者問「幾個、幾次、多少」代表 count_only=true。
+
+「我今天有幾個會勘」=
+intent=query_todo
+range=today
+keyword=會勘
+count_only=true
+
+「我今天喝幾次水」=
+intent=query_todo
+range=today
+keyword=喝水
+count_only=true
+
+「我今天還有幾個會要開」=
+intent=query_todo
+range=today
+keyword=開會
+count_only=true
+
+「我今天有沒有開會」=
+intent=query_todo
+range=today
+keyword=開會
+count_only=false
 `
       },
       {
@@ -1540,6 +1567,52 @@ async function listReminderDateQuery(replyToken, userId, query) {
   }).join("\n\n");
 
   await reply(replyToken, `${query.title}：\n\n${text}`);
+}
+async function listReminderDateQueryWithFilter(replyToken, userId, query) {
+  const range = query.range === "week"
+    ? getReminderWeekRangeUtc()
+    : getDateRangeUtc(query.range === "tomorrow" ? 1 : 0);
+
+  let dbQuery = supabase
+    .from("reminders")
+    .select("*")
+    .eq("line_user_id", userId)
+    .eq("status", "scheduled")
+    .is("summary_type", null)
+    .gte("remind_at", range.startUtc)
+    .lt("remind_at", range.endUtc)
+    .order("remind_at", { ascending: true });
+
+  if (query.keyword) {
+    dbQuery = dbQuery.ilike("title", `%${query.keyword}%`);
+  }
+
+  const { data, error } = await dbQuery;
+
+  if (error) {
+    console.error(error);
+    await reply(replyToken, "查詢待辦失敗");
+    return;
+  }
+
+  if (query.count_only) {
+    await reply(
+      replyToken,
+      `${query.keyword || "待辦"}共有 ${data?.length || 0} 筆`
+    );
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    await reply(replyToken, "目前沒有符合的待辦");
+    return;
+  }
+
+  const text = data
+    .map((item, index) => `${index + 1}. ${item.title}\n時間：${formatTaipeiTime(item.remind_at)}`)
+    .join("\n\n");
+
+  await reply(replyToken, text);
 }
 async function listTodayReminders(replyToken, userId) {
   const { startUtc, endUtc } = getTodayRangeUtc();
