@@ -28,6 +28,8 @@ const client = new line.messagingApi.MessagingApiClient({
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
 });
 
+const sentCache = new Set();
+
 app.get("/", (req, res) => {
   res.send("LINE BOT RUNNING");
 });
@@ -2591,28 +2593,18 @@ cron.schedule("0 * * * * *", async () => {
     const sentKeys = new Set();
 
     for (const reminder of data || []) {
-      if (processingReminderIds.has(reminder.id)) {
-        continue;
-      }
-
-      processingReminderIds.add(reminder.id);
-
       try {
-        const duplicateKey = [
-          reminder.line_user_id,
-          reminder.title,
-          reminder.repeat_type || "none",
-          reminder.repeat_time || reminder.remind_at,
-        ].join("|");
+        const sentKey = `${reminder.id}_${reminder.remind_at}`;
 
-        if (sentKeys.has(duplicateKey)) {
-          await supabase
-            .from("reminders")
-            .update({ status: "deleted" })
-            .eq("id", reminder.id);
-
-          console.log("重複提醒已自動停用:", reminder.title, reminder.remind_at);
+        if (sentCache.has(sentKey)) {
+          console.log("跳過重複提醒:", reminder.title, reminder.remind_at);
           continue;
+        }
+
+        sentCache.add(sentKey);
+
+        if (sentCache.size > 1000) {
+          sentCache.clear();
         }
 
         sentKeys.add(duplicateKey);
