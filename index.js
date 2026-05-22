@@ -51,24 +51,7 @@ async function handleEvent(event) {
     const userId = event.source.groupId || event.source.userId;
 
     // 0. 未來待辦查詢範圍選擇：使用者點「未來待辦」後，可直接輸入 1~4
-    if (global.todoRangeCache?.[userId] && /^[1-4]$/.test(userText)) {
-      const rangeMap = {
-        1: "tomorrow",
-        2: "week",
-        3: "month",
-        4: "future",
-      };
-
-      const selectedRange = rangeMap[userText];
-      delete global.todoRangeCache[userId];
-
-      await queryTodos(event.replyToken, userId, {
-        range: selectedRange,
-        keyword: null,
-        count_only: false,
-      });
-      return;
-    }
+    
 
     // 1. AI 確認流程：使用者正在選工作回報類型時，不要再丟給 AI
     if (
@@ -114,6 +97,25 @@ async function handleEvent(event) {
       return;
     }
 
+    
+    if (global.todoRangeCache?.[userId] && /^[1-4]$/.test(userText)) {
+      const rangeMap = {
+        1: "tomorrow",
+        2: "week",
+        3: "month",
+        4: "future",
+      };
+
+      const selectedRange = rangeMap[userText];
+      delete global.todoRangeCache[userId];
+
+      await queryTodos(event.replyToken, userId, {
+        range: selectedRange,
+        keyword: null,
+        count_only: false,
+      });
+      return;
+    }
     if (/^(選)?[0-9一二兩三四五六七八九十百]+$/.test(userText)) {
       await createWorkReportFromSelectedTemplate(event.replyToken, event, userText);
       return;
@@ -2290,31 +2292,26 @@ async function updateReminderByAi(replyToken, userId, aiIntent) {
     }
 
     const updatePayload = {
-      remind_at: parsed.time,
-      status: "scheduled",
+      remind_at: newTime,
     };
 
-    if (parsed.repeat_type && parsed.repeat_type !== "none") {
-      updatePayload.repeat_type = parsed.repeat_type;
-      updatePayload.repeat_time = parsed.repeat_time || target.repeat_time || null;
+    if (target.repeat_type === "daily" || target.repeat_type === "weekly" || target.repeat_type === "monthly") {
+      updatePayload.repeat_time = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
     }
 
     const { error } = await supabase
       .from("reminders")
       .update(updatePayload)
       .eq("id", target.id);
-
-    if (error) throw error;
-
-    await reply(
-      replyToken,
-      `已修改提醒 ✅\n提醒事項：${target.title}\n新的時間：${formatTaipeiTime(parsed.time)}`
-    );
-  } catch (error) {
-    console.error("AI UPDATE REMINDER ERROR:", error);
-    await reply(replyToken, "修改提醒失敗，請再試一次");
-  }
-}
+        await reply(
+          replyToken,
+          `已修改提醒 ✅\n提醒事項：${target.title}\n新的時間：${formatTaipeiTime(parsed.time)}`
+        );
+      } catch (error) {
+        console.error("AI UPDATE REMINDER ERROR:", error);
+        await reply(replyToken, "修改提醒失敗，請再試一次");
+      }
+    }
 
 async function listTodayReminders(replyToken, userId) {
   await queryTodos(replyToken, userId, {
