@@ -51,7 +51,24 @@ async function handleEvent(event) {
     const userId = event.source.groupId || event.source.userId;
 
     // 0. 未來待辦查詢範圍選擇：使用者點「未來待辦」後，可直接輸入 1~4
-    
+    if (global.todoRangeCache?.[userId] && /^[1-4]$/.test(userText)) {
+      const rangeMap = {
+        1: "tomorrow",
+        2: "week",
+        3: "month",
+        4: "future",
+      };
+
+      const selectedRange = rangeMap[userText];
+      delete global.todoRangeCache[userId];
+
+      await queryTodos(event.replyToken, userId, {
+        range: selectedRange,
+        keyword: null,
+        count_only: false,
+      });
+      return;
+    }
 
     // 1. AI 確認流程：使用者正在選工作回報類型時，不要再丟給 AI
     if (
@@ -97,25 +114,6 @@ async function handleEvent(event) {
       return;
     }
 
-    
-    if (global.todoRangeCache?.[userId] && /^[1-4]$/.test(userText)) {
-      const rangeMap = {
-        1: "tomorrow",
-        2: "week",
-        3: "month",
-        4: "future",
-      };
-
-      const selectedRange = rangeMap[userText];
-      delete global.todoRangeCache[userId];
-
-      await queryTodos(event.replyToken, userId, {
-        range: selectedRange,
-        keyword: null,
-        count_only: false,
-      });
-      return;
-    }
     if (/^(選)?[0-9一二兩三四五六七八九十百]+$/.test(userText)) {
       await createWorkReportFromSelectedTemplate(event.replyToken, event, userText);
       return;
@@ -184,6 +182,25 @@ async function handleEvent(event) {
     if (deleteFutureMatch) {
       const deleteNumber = parseNumberText(deleteFutureMatch[3]);
       await deleteFutureReminder(event.replyToken, userId, deleteNumber);
+      return;
+    }
+
+    if (isDeleteAllReminderIntent(normalizedText)) {
+      await deleteReminderByAi(event.replyToken, userId, {
+        intent: "delete_reminder",
+        range: "future",
+        delete_all: true,
+      });
+      return;
+    }
+
+    const localDeleteKeyword = parseDeleteReminderKeyword(normalizedText);
+    if (localDeleteKeyword) {
+      await deleteReminderByAi(event.replyToken, userId, {
+        intent: "delete_reminder",
+        range: "future",
+        keyword: localDeleteKeyword,
+      });
       return;
     }
 
@@ -1145,6 +1162,37 @@ function normalizeQueryKeyword(keyword) {
   return value;
 }
 
+
+function isDeleteAllReminderIntent(text) {
+  return (
+    text.includes("刪除所有提醒") ||
+    text.includes("刪除全部提醒") ||
+    text.includes("取消所有提醒") ||
+    text.includes("取消全部提醒") ||
+    text.includes("停止所有提醒") ||
+    text.includes("停止全部提醒")
+  );
+}
+
+function parseDeleteReminderKeyword(text) {
+  const match = text.match(/(?:刪除|刪掉|取消|停止|移除)(.+?)(?:提醒|待辦|代辦)?$/);
+  if (!match) return null;
+
+  let keyword = match[1]
+    .replace(/所有/g, "")
+    .replace(/全部/g, "")
+    .replace(/的/g, "")
+    .replace(/提醒/g, "")
+    .replace(/待辦/g, "")
+    .replace(/代辦/g, "")
+    .trim();
+
+  if (!keyword || keyword.length < 1) return null;
+  if (/^(今天|明天|未來|本週|這週|本月)$/.test(keyword)) return null;
+
+  return keyword;
+}
+
 function chineseNumberToInt(text) {
   const map = {
     零: 0,
@@ -1486,6 +1534,8 @@ JSON 格式：
   "count_only": false,
   "number": null,
   "new_time_text": null,
+  "delete_all": false,
+  "weekday": null,
   "confidence": 0.0,
   "need_confirm": false
 }
@@ -1493,7 +1543,7 @@ JSON 格式：
 重要規則：
 - 如果是「提醒我、每天、每日、每週、每月、幾分鐘後、幾小時後」這種建立提醒，回 unknown。
 - 如果是「新增模板、選1、類型1」這種操作，回 unknown。
-- 如果使用者明確說「刪除提醒、取消提醒、刪掉提醒、移除提醒」才回 delete_reminder。
+- 如果使用者明確說「刪除提醒、取消提醒、停止提醒、刪掉提醒、移除提醒」才回 delete_reminder。
 - 如果使用者明確說「修改提醒、改提醒、改到、改成」才回 update_reminder。
 - 如果使用者問「幾個、幾次、多少」，count_only=true。
 
@@ -1501,8 +1551,11 @@ JSON 格式：
 - 「未來提醒、未來待辦、未來待辦事項、未來代辦事項、接下來有什麼事、之後有什麼提醒、我的提醒、所有提醒」= query_future_reminders。
 
 刪除提醒：
-- 「刪除喝水提醒、取消喝水提醒、把喝水提醒刪掉」= delete_reminder, keyword=喝水, range=future。
+- 「刪除喝水提醒、取消喝水提醒、停止喝水提醒、把喝水提醒刪掉」= delete_reminder, keyword=喝水, range=future。
+- 「刪除蒸便當、取消蒸便當提醒、停止蒸便當提醒」= delete_reminder, keyword=蒸便當, range=future。
 - 「刪除明天開會提醒」= delete_reminder, keyword=開會, range=tomorrow。
+- 「刪除禮拜五的會議提醒、取消週五會議提醒」= delete_reminder, keyword=會議, range=week, weekday=5。
+- 「刪除所有提醒、刪除全部提醒、停止所有提醒、取消全部提醒」= delete_reminder, delete_all=true, range=future。
 - 「刪除第2個提醒」= delete_reminder, number=2, range=future。
 
 修改提醒：
@@ -2185,8 +2238,6 @@ async function listTodayReminderHistory(replyToken, userId) {
 
 
 async function findReminderCandidates(userId, options = {}) {
-  const range = getReminderHistoryRangeUtc(options.range || "future");
-
   let query = supabase
     .from("reminders")
     .select("*")
@@ -2194,9 +2245,18 @@ async function findReminderCandidates(userId, options = {}) {
     .eq("status", "scheduled")
     .is("summary_type", null)
     .order("remind_at", { ascending: true })
-    .limit(20);
+    .limit(200);
 
-  if (options.range && options.range !== "future") {
+  if (options.delete_all) {
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  }
+
+  const rangeName = options.range || "future";
+  const range = getTodoRangeUtc(rangeName);
+
+  if (rangeName !== "future") {
     query = query.gte("remind_at", range.startUtc).lt("remind_at", range.endUtc);
   } else {
     query = query.gte("remind_at", new Date().toISOString());
@@ -2208,48 +2268,107 @@ async function findReminderCandidates(userId, options = {}) {
 
   const { data, error } = await query;
   if (error) throw error;
-  return data || [];
+
+  let candidates = data || [];
+
+  if (options.weekday !== null && options.weekday !== undefined && options.weekday !== "") {
+    const weekday = Number(options.weekday);
+    candidates = candidates.filter((item) => reminderMatchesWeekday(item, weekday));
+  }
+
+  return candidates;
+}
+
+function reminderMatchesWeekday(item, weekday) {
+  if (Number.isNaN(weekday)) return true;
+
+  if (item.repeat_type === "weekly") {
+    return Number(item.repeat_day) === weekday;
+  }
+
+  const date = new Date(item.remind_at);
+  const taipei = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+  return taipei.getUTCDay() === weekday;
+}
+
+function getDeleteKeyword(aiIntent) {
+  if (aiIntent.keyword) return String(aiIntent.keyword).trim();
+  if (aiIntent.content) return String(aiIntent.content).trim();
+  return null;
 }
 
 async function deleteReminderByAi(replyToken, userId, aiIntent) {
   try {
+    const keyword = normalizeDeleteKeyword(getDeleteKeyword(aiIntent));
+    const deleteAll = aiIntent.delete_all === true || keyword === "ALL";
+
     const candidates = await findReminderCandidates(userId, {
       range: aiIntent.range || "future",
-      keyword: aiIntent.keyword || null,
+      keyword: deleteAll ? null : keyword,
+      weekday: aiIntent.weekday,
+      delete_all: deleteAll,
     });
 
-    const target = aiIntent.number ? candidates[Number(aiIntent.number) - 1] : candidates[0];
-
-    if (!target) {
+    if (!candidates || candidates.length === 0) {
       await reply(replyToken, "找不到符合條件的提醒");
       return;
     }
 
-    if (!aiIntent.number && candidates.length > 1) {
-      const list = candidates
-        .slice(0, 10)
-        .map((item, index) => `${index + 1}. ${item.title}\n時間：${formatTaipeiTime(item.remind_at)}`)
-        .join("\n\n");
+    let targets;
+    if (aiIntent.number) {
+      const target = candidates[Number(aiIntent.number) - 1];
+      targets = target ? [target] : [];
+    } else {
+      targets = candidates;
+    }
 
-      await reply(
-        replyToken,
-        `找到多筆符合的提醒，請改用編號刪除：\n\n${list}\n\n例如：刪除第1個提醒`
-      );
+    if (!targets || targets.length === 0) {
+      await reply(replyToken, "找不到這個提醒編號");
       return;
     }
+
+    const ids = targets.map((item) => item.id);
 
     const { error } = await supabase
       .from("reminders")
       .update({ status: "deleted" })
-      .eq("id", target.id);
+      .in("id", ids);
 
     if (error) throw error;
 
-    await reply(replyToken, `已刪除提醒 ✅\n${target.title}\n時間：${formatTaipeiTime(target.remind_at)}`);
+    const list = targets
+      .slice(0, 10)
+      .map((item, index) => `${index + 1}. ${item.title}\n時間：${formatTaipeiTime(item.remind_at)}`)
+      .join("\n\n");
+
+    await reply(
+      replyToken,
+      `已刪除提醒 ✅\n共 ${targets.length} 筆\n\n${list}${targets.length > 10 ? "\n\n其餘也已刪除。" : ""}`
+    );
   } catch (error) {
     console.error("AI DELETE REMINDER ERROR:", error);
     await reply(replyToken, "刪除提醒失敗，請再試一次");
   }
+}
+
+function normalizeDeleteKeyword(keyword) {
+  if (!keyword) return null;
+
+  let text = String(keyword)
+    .replace(/提醒/g, "")
+    .replace(/待辦/g, "")
+    .replace(/代辦/g, "")
+    .replace(/我要/g, "")
+    .replace(/我想/g, "")
+    .replace(/刪除/g, "")
+    .replace(/取消/g, "")
+    .replace(/停止/g, "")
+    .replace(/全部/g, "所有")
+    .trim();
+
+  if (["所有", "所有的", "全部", "全部的"].includes(text)) return "ALL";
+
+  return text || null;
 }
 
 async function updateReminderByAi(replyToken, userId, aiIntent) {
@@ -2261,7 +2380,8 @@ async function updateReminderByAi(replyToken, userId, aiIntent) {
 
     const candidates = await findReminderCandidates(userId, {
       range: aiIntent.range || "future",
-      keyword: aiIntent.keyword || null,
+      keyword: normalizeDeleteKeyword(aiIntent.keyword || null),
+      weekday: aiIntent.weekday,
     });
 
     const target = aiIntent.number ? candidates[Number(aiIntent.number) - 1] : candidates[0];
@@ -2292,26 +2412,44 @@ async function updateReminderByAi(replyToken, userId, aiIntent) {
     }
 
     const updatePayload = {
-      remind_at: newTime,
+      remind_at: parsed.time,
+      status: "scheduled",
     };
+
+    const [hour, minute] = getTaipeiHourMinute(parsed.time);
 
     if (target.repeat_type === "daily" || target.repeat_type === "weekly" || target.repeat_type === "monthly") {
       updatePayload.repeat_time = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    }
+
+    if (parsed.repeat_type && parsed.repeat_type !== "none") {
+      updatePayload.repeat_type = parsed.repeat_type;
+      updatePayload.repeat_time = parsed.repeat_time || updatePayload.repeat_time || target.repeat_time || null;
+      updatePayload.repeat_day = parsed.repeat_day || target.repeat_day || null;
     }
 
     const { error } = await supabase
       .from("reminders")
       .update(updatePayload)
       .eq("id", target.id);
-        await reply(
-          replyToken,
-          `已修改提醒 ✅\n提醒事項：${target.title}\n新的時間：${formatTaipeiTime(parsed.time)}`
-        );
-      } catch (error) {
-        console.error("AI UPDATE REMINDER ERROR:", error);
-        await reply(replyToken, "修改提醒失敗，請再試一次");
-      }
-    }
+
+    if (error) throw error;
+
+    await reply(
+      replyToken,
+      `已修改提醒 ✅\n提醒事項：${target.title}\n新的時間：${formatTaipeiTime(parsed.time)}`
+    );
+  } catch (error) {
+    console.error("AI UPDATE REMINDER ERROR:", error);
+    await reply(replyToken, "修改提醒失敗，請再試一次");
+  }
+}
+
+function getTaipeiHourMinute(value) {
+  const date = new Date(value);
+  const taipei = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+  return [taipei.getUTCHours(), taipei.getUTCMinutes()];
+}
 
 async function listTodayReminders(replyToken, userId) {
   await queryTodos(replyToken, userId, {
@@ -2443,8 +2581,27 @@ cron.schedule("*/15 * * * * *", async () => {
       return;
     }
 
+    const sentKeys = new Set();
+
     for (const reminder of data || []) {
       try {
+        const duplicateKey = [
+          reminder.line_user_id,
+          reminder.title,
+          reminder.repeat_type || "none",
+          reminder.repeat_time || reminder.remind_at,
+        ].join("|");
+
+        if (sentKeys.has(duplicateKey)) {
+          await supabase
+            .from("reminders")
+            .update({ status: "deleted" })
+            .eq("id", reminder.id);
+          console.log("重複提醒已自動停用:", reminder.title, reminder.remind_at);
+          continue;
+        }
+
+        sentKeys.add(duplicateKey);
         await supabase
           .from("reminders")
           .update({
