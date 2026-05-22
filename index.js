@@ -2254,7 +2254,7 @@ async function findReminderCandidates(userId, options = {}) {
   }
 
   const rangeName = options.range || "future";
-  const range = getTodoRangeUtc(rangeName);
+  const range = getTodoQueryRangeUtc(rangeName);
 
   if (rangeName !== "future") {
     query = query.gte("remind_at", range.startUtc).lt("remind_at", range.endUtc);
@@ -2560,19 +2560,28 @@ async function reply(replyToken, text) {
   });
 }
 
-cron.schedule("*/15 * * * * *", async () => {
-console.log("CRON RUNNING:", new Date().toISOString());
+
+const processingReminderIds = new Set();
+
+function isLineMonthlyLimitError(error) {
+  const status = error?.status || error?.response?.status;
+  const body = JSON.stringify(error?.body || error?.response?.data || error || "");
+  return status === 429 || body.includes("monthly limit") || body.includes("Too Many Requests");
+}
+
+cron.schedule("0 * * * * *", async () => {
+  console.log("CRON RUNNING:", new Date().toISOString());
+
   try {
     const now = new Date().toISOString();
-
-  
 
     const { data, error } = await supabase
       .from("reminders")
       .select("*")
       .eq("status", "scheduled")
       .lte("remind_at", now)
-      .order("remind_at", { ascending: true });
+      .order("remind_at", { ascending: true })
+      .limit(20);
 
     if (error) {
       console.error("REMINDER CHECK ERROR:", error);
@@ -2582,6 +2591,12 @@ console.log("CRON RUNNING:", new Date().toISOString());
     const sentKeys = new Set();
 
     for (const reminder of data || []) {
+      if (processingReminderIds.has(reminder.id)) {
+        continue;
+      }
+
+      processingReminderIds.add(reminder.id);
+
       try {
         const duplicateKey = [
           reminder.line_user_id,
@@ -2595,17 +2610,28 @@ console.log("CRON RUNNING:", new Date().toISOString());
             .from("reminders")
             .update({ status: "deleted" })
             .eq("id", reminder.id);
+
           console.log("重複提醒已自動停用:", reminder.title, reminder.remind_at);
           continue;
         }
 
         sentKeys.add(duplicateKey);
-        await supabase
+
+        const { data: claimedRows, error: claimError } = await supabase
           .from("reminders")
-          .update({
-            status: "reminded",
-          })
-          .eq("id", reminder.id);
+          .update({ status: "processing" })
+          .eq("id", reminder.id)
+          .eq("status", "scheduled")
+          .select("id");
+
+        if (claimError) {
+          console.error("CLAIM REMINDER ERROR:", claimError);
+          continue;
+        }
+
+        if (!claimedRows || claimedRows.length === 0) {
+          continue;
+        }
 
         let pushText = `提醒你：${reminder.title}`;
 
@@ -2643,31 +2669,19 @@ console.log("CRON RUNNING:", new Date().toISOString());
         });
 
         if (reminder.repeat_type === "daily") {
-          const [hour, minute] =
-            reminder.repeat_time.split(":").map(Number);
-
+          const [hour, minute] = reminder.repeat_time.split(":").map(Number);
           const nextTime = nextTaipeiTime(hour, minute);
 
-          const { error: updateError } = await supabase
+          await supabase
             .from("reminders")
             .update({
               remind_at: toTaipeiISOString(nextTime),
               status: "scheduled",
             })
             .eq("id", reminder.id);
-
-          if (updateError) {
-            console.error(updateError);
-          }
         } else if (reminder.repeat_type === "weekly") {
-          const [hour, minute] =
-            reminder.repeat_time.split(":").map(Number);
-
-          const nextTime = nextWeeklyTime(
-            reminder.repeat_day,
-            hour,
-            minute
-          );
+          const [hour, minute] = reminder.repeat_time.split(":").map(Number);
+          const nextTime = nextWeeklyTime(reminder.repeat_day, hour, minute);
 
           await supabase
             .from("reminders")
@@ -2677,14 +2691,8 @@ console.log("CRON RUNNING:", new Date().toISOString());
             })
             .eq("id", reminder.id);
         } else if (reminder.repeat_type === "monthly") {
-          const [hour, minute] =
-            reminder.repeat_time.split(":").map(Number);
-
-          const nextTime = nextMonthlyTime(
-            reminder.repeat_day,
-            hour,
-            minute
-          );
+          const [hour, minute] = reminder.repeat_time.split(":").map(Number);
+          const nextTime = nextMonthlyTime(reminder.repeat_day, hour, minute);
 
           await supabase
             .from("reminders")
@@ -2702,20 +2710,20 @@ console.log("CRON RUNNING:", new Date().toISOString());
             .eq("id", reminder.id);
         }
 
-        console.log(
-          "提醒已發送:",
-          reminder.title,
-          reminder.remind_at
-        );
+        console.log("提醒已發送:", reminder.title, reminder.remind_at);
       } catch (err) {
         console.error("PUSH MESSAGE ERROR:", err);
+
+        const failedStatus = isLineMonthlyLimitError(err) ? "push_failed_quota" : "push_failed";
 
         await supabase
           .from("reminders")
           .update({
-            status: "scheduled",
+            status: failedStatus,
           })
           .eq("id", reminder.id);
+      } finally {
+        processingReminderIds.delete(reminder.id);
       }
     }
   } catch (err) {
