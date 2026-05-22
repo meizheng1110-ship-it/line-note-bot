@@ -2564,16 +2564,13 @@ cron.schedule("*/15 * * * * *", async () => {
   try {
     const now = new Date().toISOString();
 
-    const lookback = new Date(
-      Date.now() - 10 * 60 * 1000
-    ).toISOString();
+  
 
     const { data, error } = await supabase
       .from("reminders")
       .select("*")
       .eq("status", "scheduled")
       .lte("remind_at", now)
-      .gte("remind_at", lookback)
       .order("remind_at", { ascending: true });
 
     if (error) {
