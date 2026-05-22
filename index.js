@@ -2561,6 +2561,7 @@ async function reply(replyToken, text) {
 }
 
 cron.schedule("*/15 * * * * *", async () => {
+console.log("CRON RUNNING:", new Date().toISOString());
   try {
     const now = new Date().toISOString();
 
