@@ -47,6 +47,7 @@ async function handleEvent(event) {
 
   try {
     const userText = event.message.text.trim();
+    const normalizedText = normalizeInputText(userText);
     const userId = event.source.groupId || event.source.userId;
 
     // 1. AI 確認流程：使用者正在選工作回報類型時，不要再丟給 AI
@@ -122,7 +123,15 @@ async function handleEvent(event) {
     if (userText === "如何刪除提醒") {
       await reply(
         event.replyToken,
-        "請先輸入「今日待辦」或「未來提醒」查看列表，然後輸入：\n\n刪除今日第1個提醒\n刪除未來第1個提醒"
+        "請先輸入「今日待辦」或「未來提醒」查看列表，然後輸入：\n\n刪除今日第1個提醒\n刪除未來第1個提醒\n也可以說：刪除喝水提醒"
+      );
+      return;
+    }
+
+    if (userText === "修改提醒" || userText === "如何修改提醒") {
+      await reply(
+        event.replyToken,
+        "可以這樣修改提醒：\n\n把喝水提醒改到晚上8點\n把明天開會改成下午3點\n修改第2個提醒到明天早上9點\n\n如果不知道編號，先輸入「未來提醒」查看列表。"
       );
       return;
     }
@@ -130,7 +139,7 @@ async function handleEvent(event) {
     if (userText === "使用說明") {
       await reply(
         event.replyToken,
-        "你可以這樣使用：\n\n1. 今日待辦\n2. 未來提醒\n3. 明天早上8點提醒我開會\n4. 3分鐘後提醒我喝水\n5. 十三分鐘後提醒我下班\n6. 兩小時後提醒我開會\n7. 三天後提醒我繳費\n8. 每天早上8點提醒我吃藥\n9. 每週五下午5點提醒我交報告\n10. 每月4號提醒我要做安衛檢查表\n11. 刪除今日第1個提醒\n12. 刪除未來第1個提醒"
+        "你可以這樣使用：\n\n1. 今日待辦\n2. 明天要幹嘛\n3. 未來提醒 / 未來待辦事項\n4. 今天做了什麼\n5. 明天早上8點提醒我開會\n6. 3分鐘後提醒我喝水\n7. 每天早上8點提醒我吃藥\n8. 每週五提醒我交報告\n9. 刪除今日第1個提醒\n10. 刪除喝水提醒\n11. 把喝水提醒改到晚上8點\n12. 今天誰出去 / 這週誰請假"
       );
       return;
     }
@@ -158,16 +167,16 @@ async function handleEvent(event) {
 
     // 4. 明確的提醒建立先走本地提醒解析，不要進 AI
     const isReminderCreationText =
-      userText.includes("提醒我") ||
-      userText.includes("提醒") ||
-      userText.includes("每天") ||
-      userText.includes("每日") ||
-      userText.includes("每週") ||
-      userText.includes("每周") ||
-      userText.includes("每月") ||
-      userText.includes("分鐘後") ||
-      userText.includes("小時後") ||
-      userText.includes("天後");
+      normalizedText.includes("提醒我") ||
+      normalizedText.includes("提醒") ||
+      normalizedText.includes("每天") ||
+      normalizedText.includes("每日") ||
+      normalizedText.includes("每週") ||
+      normalizedText.includes("每周") ||
+      normalizedText.includes("每月") ||
+      normalizedText.includes("分鐘後") ||
+      normalizedText.includes("小時後") ||
+      normalizedText.includes("天後");
 
     if (isReminderCreationText) {
       await createReminderFromText(event.replyToken, userId, userText);
@@ -187,24 +196,24 @@ async function handleEvent(event) {
       return;
     }
 
-    const reminderDateQuery = parseReminderDateQuery(userText);
+    const reminderDateQuery = parseReminderDateQuery(normalizedText);
     if (reminderDateQuery) {
       await listReminderDateQuery(event.replyToken, userId, reminderDateQuery);
       return;
     }
 
-    if (isTodayReminderIntent(userText)) {
+    if (isTodayReminderIntent(normalizedText)) {
       await listTodayReminders(event.replyToken, userId);
       return;
     }
 
-    if (isFutureReminderIntent(userText)) {
+    if (isFutureReminderIntent(normalizedText)) {
       await listFutureReminders(event.replyToken, userId);
       return;
     }
 
     // 6. 以上都判斷不到，才交給 AI 理解自然語言
-    const aiIntent = await parseUserIntent(userText);
+    const aiIntent = await parseUserIntent(normalizedText);
     console.log("AI INTENT:", aiIntent);
 
     if (aiIntent.intent === "query_future_reminders") {
@@ -237,7 +246,7 @@ async function handleEvent(event) {
         userId,
         {
           range: aiIntent.range || "today",
-          keyword: aiIntent.keyword || null,
+          keyword: normalizeQueryKeyword(aiIntent.keyword),
           count_only: aiIntent.count_only || false,
         }
       );
@@ -921,6 +930,9 @@ function isTodayReminderIntent(text) {
     "今日待辦",
     "今天待辦",
     "今天要做什麼",
+    "今天要幹什麼",
+    "今天要幹嘛",
+    "今天要幹甚麼",
     "我今天要做什麼",
     "今天有什麼事",
     "今天有什麼提醒",
@@ -941,6 +953,7 @@ function isFutureReminderIntent(text) {
     "未來提醒",
     "未來待辦",
     "未來待辦事項",
+    "未來待辦事項有哪些",
     "未來代辦",
     "未來代辦事項",
     "未來的待辦",
@@ -954,6 +967,38 @@ function isFutureReminderIntent(text) {
   ];
 
   return keywords.some((keyword) => text.includes(keyword));
+}
+
+function normalizeInputText(text) {
+  return String(text || "")
+    .trim()
+    .replaceAll("代辦", "待辦")
+    .replaceAll("甚麼", "什麼")
+    .replaceAll("幹甚麼", "幹嘛")
+    .replaceAll("幹什麼", "幹嘛")
+    .replaceAll("干嘛", "幹嘛");
+}
+
+function normalizeQueryKeyword(keyword) {
+  if (!keyword) return null;
+
+  const value = normalizeInputText(keyword).trim();
+
+  const genericKeywords = [
+    "什麼",
+    "幹嘛",
+    "待辦",
+    "待辦事項",
+    "事情",
+    "事項",
+    "要做",
+    "要做的",
+    "做什麼",
+    "有什麼",
+  ];
+
+  if (genericKeywords.includes(value)) return null;
+  return value;
 }
 
 function chineseNumberToInt(text) {
@@ -1322,8 +1367,8 @@ JSON 格式：
 - 「修改第2個提醒到明天早上9點」= update_reminder, number=2, new_time_text=明天早上9點。
 
 待辦查詢：
-- 「今天待辦、今日待辦、今天的待辦事項、今天要幹嘛、我今天要做什麼、今天有什麼事」= query_todo, range=today。
-- 「明天待辦、隔日待辦、明天有什麼事、明天要做什麼、明天要幹嘛、明天有啥事、明天有哪些待辦」= query_todo, range=tomorrow。
+- 「今天待辦、今日待辦、今天的待辦事項、今天要幹嘛、今天要幹什麼、今天要幹甚麼、我今天要做什麼、今天有什麼事」= query_todo, range=today, keyword=null。
+- 「明天待辦、隔日待辦、明天有什麼事、明天要做什麼、明天要幹什麼、明天要幹甚麼、明天要幹嘛、明天有啥事、明天有哪些待辦」= query_todo, range=tomorrow, keyword=null。
 - 「本週待辦、這週待辦、這禮拜要幹嘛」= query_todo, range=week。
 - 「我今天有幾個會勘」= query_todo, range=today, keyword=會勘, count_only=true。
 - 「我今天喝幾次水」= query_todo, range=today, keyword=喝水, count_only=true。
@@ -1334,6 +1379,7 @@ JSON 格式：
 - 「這週做了什麼、本週做了什麼、這禮拜做了什麼」= query_reminder_history, range=week。
 - 「這個月做了什麼、本月做了什麼」= query_reminder_history, range=month。
 - 如果問「還沒做什麼、還沒提醒、待辦」，是 query_todo，不是 query_reminder_history。
+- 一般查詢例如「明天要幹嘛、今天要做什麼」不要把「什麼、幹嘛、待辦、事情」當 keyword，keyword 必須是 null。
 
 工作回報查詢：
 - 「今天工作回報、今日工作回報、今天誰出去、今天誰外出、今天大家去哪、今天誰去哪裡」= query_work_report, range=today, work_type=null。
@@ -1486,7 +1532,10 @@ function parseReminderDateQuery(text) {
     text.includes("今天的待辦") ||
     text.includes("今日的待辦") ||
     text.includes("今天的待辦事項") ||
-    text.includes("今日的待辦事項")
+    text.includes("今日的待辦事項") ||
+    text.includes("今天要幹嘛") ||
+    text.includes("今天要做什麼") ||
+    text.includes("今天有什麼事")
   ) {
     return { type: "date", days: 0, title: "今日待辦" };
   }
@@ -1498,7 +1547,11 @@ function parseReminderDateQuery(text) {
     text.includes("明天的待辦") ||
     text.includes("明日的待辦") ||
     text.includes("明天的待辦事項") ||
-    text.includes("隔日待辦事項")
+    text.includes("隔日待辦事項") ||
+    text.includes("明天要幹嘛") ||
+    text.includes("明天要做什麼") ||
+    text.includes("明天有什麼事") ||
+    text.includes("明天有啥事")
   ) {
     return { type: "date", days: 1, title: "明日待辦" };
   }
@@ -1632,8 +1685,10 @@ async function listReminderHistory(replyToken, userId, options) {
     .lt("remind_at", range.endUtc)
     .order("remind_at", { ascending: true });
 
-  if (options.keyword) {
-    query = query.ilike("title", `%${options.keyword}%`);
+  const keyword = normalizeQueryKeyword(options.keyword);
+
+  if (keyword) {
+    query = query.ilike("title", `%${keyword}%`);
   }
 
   const { data, error } = await query;
@@ -1748,8 +1803,10 @@ async function listReminderDateQueryWithFilter(replyToken, userId, query) {
     .lt("remind_at", range.endUtc)
     .order("remind_at", { ascending: true });
 
-  if (query.keyword) {
-    dbQuery = dbQuery.ilike("title", `%${query.keyword}%`);
+  const keyword = normalizeQueryKeyword(query.keyword);
+
+  if (keyword) {
+    dbQuery = dbQuery.ilike("title", `%${keyword}%`);
   }
 
   const { data, error } = await dbQuery;
@@ -1763,7 +1820,7 @@ async function listReminderDateQueryWithFilter(replyToken, userId, query) {
   if (query.count_only) {
     await reply(
       replyToken,
-      `${query.keyword || "待辦"}共有 ${data?.length || 0} 筆`
+      `${keyword || "待辦"}共有 ${data?.length || 0} 筆`
     );
     return;
   }
@@ -1994,6 +2051,7 @@ async function listFutureReminders(replyToken, userId) {
     .select("*")
     .eq("line_user_id", userId)
     .eq("status", "scheduled")
+    .is("summary_type", null)
     .gte("remind_at", now)
     .order("remind_at", { ascending: true })
     .limit(10);
