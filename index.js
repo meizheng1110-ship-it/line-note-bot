@@ -207,6 +207,21 @@ async function handleEvent(event) {
     const aiIntent = await parseUserIntent(userText);
     console.log("AI INTENT:", aiIntent);
 
+    if (aiIntent.intent === "query_future_reminders") {
+      await listFutureReminders(event.replyToken, userId);
+      return;
+    }
+
+    if (aiIntent.intent === "delete_reminder") {
+      await deleteReminderByAi(event.replyToken, userId, aiIntent);
+      return;
+    }
+
+    if (aiIntent.intent === "update_reminder") {
+      await updateReminderByAi(event.replyToken, userId, aiIntent);
+      return;
+    }
+
     if (aiIntent.intent === "query_reminder_history") {
       await listReminderHistory(event.replyToken, userId, {
         range: aiIntent.range || "today",
@@ -925,6 +940,11 @@ function isFutureReminderIntent(text) {
     "提醒列表",
     "未來提醒",
     "未來待辦",
+    "未來待辦事項",
+    "未來代辦",
+    "未來代辦事項",
+    "未來的待辦",
+    "未來的代辦",
     "接下來要做什麼",
     "接下來要幹嘛",
     "之後要做什麼",
@@ -1259,31 +1279,51 @@ async function parseUserIntent(userText) {
 
 支援 intent：
 query_todo
+query_future_reminders
 query_reminder_history
 query_work_report
 create_work_report
+delete_reminder
+update_reminder
 unknown
 
 JSON 格式：
 {
-  "intent": "query_todo|query_reminder_history|query_work_report|create_work_report|unknown",
-  "range": "today|tomorrow|week|month|null",
+  "intent": "query_todo|query_future_reminders|query_reminder_history|query_work_report|create_work_report|delete_reminder|update_reminder|unknown",
+  "range": "today|tomorrow|week|month|future|null",
   "work_type": null,
   "content": null,
   "keyword": null,
   "count_only": false,
+  "number": null,
+  "new_time_text": null,
   "confidence": 0.0,
   "need_confirm": false
 }
 
 重要規則：
 - 如果是「提醒我、每天、每日、每週、每月、幾分鐘後、幾小時後」這種建立提醒，回 unknown。
-- 如果是「新增模板、刪除、選1、類型1」這種操作，回 unknown。
+- 如果是「新增模板、選1、類型1」這種操作，回 unknown。
+- 如果使用者明確說「刪除提醒、取消提醒、刪掉提醒、移除提醒」才回 delete_reminder。
+- 如果使用者明確說「修改提醒、改提醒、改到、改成」才回 update_reminder。
 - 如果使用者問「幾個、幾次、多少」，count_only=true。
+
+未來提醒查詢：
+- 「未來提醒、未來待辦、未來待辦事項、未來代辦事項、接下來有什麼事、之後有什麼提醒、我的提醒、所有提醒」= query_future_reminders。
+
+刪除提醒：
+- 「刪除喝水提醒、取消喝水提醒、把喝水提醒刪掉」= delete_reminder, keyword=喝水, range=future。
+- 「刪除明天開會提醒」= delete_reminder, keyword=開會, range=tomorrow。
+- 「刪除第2個提醒」= delete_reminder, number=2, range=future。
+
+修改提醒：
+- 「把喝水提醒改到晚上8點」= update_reminder, keyword=喝水, new_time_text=晚上8點。
+- 「把明天開會改成下午3點」= update_reminder, keyword=開會, new_time_text=明天下午3點。
+- 「修改第2個提醒到明天早上9點」= update_reminder, number=2, new_time_text=明天早上9點。
 
 待辦查詢：
 - 「今天待辦、今日待辦、今天的待辦事項、今天要幹嘛、我今天要做什麼、今天有什麼事」= query_todo, range=today。
-- 「明天待辦、隔日待辦、明天有什麼事、明天要做什麼」= query_todo, range=tomorrow。
+- 「明天待辦、隔日待辦、明天有什麼事、明天要做什麼、明天要幹嘛、明天有啥事、明天有哪些待辦」= query_todo, range=tomorrow。
 - 「本週待辦、這週待辦、這禮拜要幹嘛」= query_todo, range=week。
 - 「我今天有幾個會勘」= query_todo, range=today, keyword=會勘, count_only=true。
 - 「我今天喝幾次水」= query_todo, range=today, keyword=喝水, count_only=true。
@@ -1770,6 +1810,141 @@ async function listTodayReminderHistory(replyToken, userId) {
     .join("\n\n");
 
   await reply(replyToken, `今日紀錄：\n\n${text}`);
+}
+
+
+async function findReminderCandidates(userId, options = {}) {
+  const range = getReminderHistoryRangeUtc(options.range || "future");
+
+  let query = supabase
+    .from("reminders")
+    .select("*")
+    .eq("line_user_id", userId)
+    .eq("status", "scheduled")
+    .is("summary_type", null)
+    .order("remind_at", { ascending: true })
+    .limit(20);
+
+  if (options.range && options.range !== "future") {
+    query = query.gte("remind_at", range.startUtc).lt("remind_at", range.endUtc);
+  } else {
+    query = query.gte("remind_at", new Date().toISOString());
+  }
+
+  if (options.keyword) {
+    query = query.ilike("title", `%${options.keyword}%`);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
+async function deleteReminderByAi(replyToken, userId, aiIntent) {
+  try {
+    const candidates = await findReminderCandidates(userId, {
+      range: aiIntent.range || "future",
+      keyword: aiIntent.keyword || null,
+    });
+
+    const target = aiIntent.number ? candidates[Number(aiIntent.number) - 1] : candidates[0];
+
+    if (!target) {
+      await reply(replyToken, "找不到符合條件的提醒");
+      return;
+    }
+
+    if (!aiIntent.number && candidates.length > 1) {
+      const list = candidates
+        .slice(0, 10)
+        .map((item, index) => `${index + 1}. ${item.title}\n時間：${formatTaipeiTime(item.remind_at)}`)
+        .join("\n\n");
+
+      await reply(
+        replyToken,
+        `找到多筆符合的提醒，請改用編號刪除：\n\n${list}\n\n例如：刪除第1個提醒`
+      );
+      return;
+    }
+
+    const { error } = await supabase
+      .from("reminders")
+      .update({ status: "deleted" })
+      .eq("id", target.id);
+
+    if (error) throw error;
+
+    await reply(replyToken, `已刪除提醒 ✅\n${target.title}\n時間：${formatTaipeiTime(target.remind_at)}`);
+  } catch (error) {
+    console.error("AI DELETE REMINDER ERROR:", error);
+    await reply(replyToken, "刪除提醒失敗，請再試一次");
+  }
+}
+
+async function updateReminderByAi(replyToken, userId, aiIntent) {
+  try {
+    if (!aiIntent.new_time_text) {
+      await reply(replyToken, "請告訴我要改到什麼時間，例如：把喝水提醒改到晚上8點");
+      return;
+    }
+
+    const candidates = await findReminderCandidates(userId, {
+      range: aiIntent.range || "future",
+      keyword: aiIntent.keyword || null,
+    });
+
+    const target = aiIntent.number ? candidates[Number(aiIntent.number) - 1] : candidates[0];
+
+    if (!target) {
+      await reply(replyToken, "找不到符合條件的提醒");
+      return;
+    }
+
+    if (!aiIntent.number && candidates.length > 1) {
+      const list = candidates
+        .slice(0, 10)
+        .map((item, index) => `${index + 1}. ${item.title}\n時間：${formatTaipeiTime(item.remind_at)}`)
+        .join("\n\n");
+
+      await reply(
+        replyToken,
+        `找到多筆符合的提醒，請改用編號修改：\n\n${list}\n\n例如：修改第1個提醒到明天早上9點`
+      );
+      return;
+    }
+
+    const parsed = await parseReminder(`${aiIntent.new_time_text}提醒我${target.title}`);
+
+    if (!parsed.time) {
+      await reply(replyToken, "我不太確定新的提醒時間，請再說清楚一點");
+      return;
+    }
+
+    const updatePayload = {
+      remind_at: parsed.time,
+      status: "scheduled",
+    };
+
+    if (parsed.repeat_type && parsed.repeat_type !== "none") {
+      updatePayload.repeat_type = parsed.repeat_type;
+      updatePayload.repeat_time = parsed.repeat_time || target.repeat_time || null;
+    }
+
+    const { error } = await supabase
+      .from("reminders")
+      .update(updatePayload)
+      .eq("id", target.id);
+
+    if (error) throw error;
+
+    await reply(
+      replyToken,
+      `已修改提醒 ✅\n提醒事項：${target.title}\n新的時間：${formatTaipeiTime(parsed.time)}`
+    );
+  } catch (error) {
+    console.error("AI UPDATE REMINDER ERROR:", error);
+    await reply(replyToken, "修改提醒失敗，請再試一次");
+  }
 }
 
 async function listTodayReminders(replyToken, userId) {
