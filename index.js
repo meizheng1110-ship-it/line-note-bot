@@ -252,14 +252,15 @@ async function handleEvent(event) {
       return;
     }
 
-    // 5. 明確的提醒建立先走本地提醒解析，不要進 AI
-    const workReport = parseWorkReport(userText);
-
-    if (workReport) {
-      await createWorkReport(event.replyToken, event, workReport);
+    // 5. 問「誰去開會 / 誰去會勘 / 誰去巡檢」時，優先當成工作回報查詢，不要誤建工作回報
+    const naturalWorkReportQuery = parseNaturalWorkReportQuery(normalizedText);
+    if (naturalWorkReportQuery) {
+      await listWorkReports(event.replyToken, event, naturalWorkReportQuery);
       return;
     }
 
+    // 6. 有明確日期或時間，就優先當成建立提醒
+    // 例如：5/26 早上10點要開線上會議、明天早上8點開會、2分鐘後提醒我喝水
     const isReminderCreationText = isTimeBasedReminderCreationIntent(normalizedText);
 
     if (isReminderCreationText) {
@@ -267,7 +268,15 @@ async function handleEvent(event) {
       return;
     }
 
-    // 6. 明確工作回報與舊查詢先走本地判斷
+    // 7. 沒有明確日期時間，但像「我去開會 / 工作抽查 / 會勘 / 請假」才建立工作回報
+    const workReport = parseWorkReport(userText);
+
+    if (workReport) {
+      await createWorkReport(event.replyToken, event, workReport);
+      return;
+    }
+
+    // 8. 明確工作回報與舊查詢先走本地判斷
 
     if (isWorkReportQueryIntent(userText)) {
       await listWorkReports(event.replyToken, event, userText);
@@ -448,32 +457,96 @@ function isWorkReportMenuIntent(text) {
 }
 
 function isTimeBasedReminderCreationIntent(text) {
+  const normalized = normalizeInputText(text);
+
   const hasReminderVerb =
-    text.includes("提醒我") ||
-    text.includes("提醒") ||
-    text.includes("叫我") ||
-    text.includes("通知我");
+    normalized.includes("提醒我") ||
+    normalized.includes("提醒") ||
+    normalized.includes("叫我") ||
+    normalized.includes("通知我");
 
-  const hasTimeWord =
-    text.includes("今天") ||
-    text.includes("明天") ||
-    text.includes("後天") ||
-    text.includes("分鐘後") ||
-    text.includes("小時後") ||
-    text.includes("天後") ||
-    text.includes("早上") ||
-    text.includes("上午") ||
-    text.includes("中午") ||
-    text.includes("下午") ||
-    text.includes("晚上") ||
-    text.includes("每天") ||
-    text.includes("每日") ||
-    text.includes("每週") ||
-    text.includes("每周") ||
-    text.includes("每月") ||
-    /[0-9一二兩三四五六七八九十百]+\s*點/.test(text);
+  const hasRelativeTime =
+    normalized.includes("分鐘後") ||
+    normalized.includes("分後") ||
+    normalized.includes("小時後") ||
+    normalized.includes("鐘頭後") ||
+    normalized.includes("天後");
 
-  return hasReminderVerb && hasTimeWord;
+  const hasRepeatTime =
+    normalized.includes("每天") ||
+    normalized.includes("每日") ||
+    normalized.includes("每週") ||
+    normalized.includes("每周") ||
+    normalized.includes("每月");
+
+  const hasClockTime =
+    /[0-9一二兩三四五六七八九十百]+\s*點/.test(normalized) ||
+    /[0-9一二兩三四五六七八九十百]+\s*:\s*[0-9]{1,2}/.test(normalized) ||
+    normalized.includes("早上") ||
+    normalized.includes("上午") ||
+    normalized.includes("中午") ||
+    normalized.includes("下午") ||
+    normalized.includes("晚上");
+
+  const hasDateWord =
+    normalized.includes("今天") ||
+    normalized.includes("明天") ||
+    normalized.includes("後天") ||
+    /\d{1,2}\s*\/\s*\d{1,2}/.test(normalized) ||
+    /\d{1,2}\s*月\s*\d{1,2}\s*(號|日)?/.test(normalized);
+
+  const isQuestion =
+    normalized.includes("誰") ||
+    normalized.includes("哪位") ||
+    normalized.includes("哪些") ||
+    normalized.includes("嗎") ||
+    normalized.includes("有誰") ||
+    normalized.includes("幾個") ||
+    normalized.includes("幾次");
+
+  if (isQuestion) return false;
+
+  // 有提醒動詞 + 時間，或有明確日期 + 時間，都視為建立提醒
+  return hasRelativeTime || hasRepeatTime || (hasReminderVerb && (hasClockTime || hasDateWord)) || (hasDateWord && hasClockTime);
+}
+
+function parseNaturalWorkReportQuery(text) {
+  const normalized = normalizeInputText(text);
+
+  const hasQueryWord =
+    normalized.includes("誰") ||
+    normalized.includes("有誰") ||
+    normalized.includes("哪位") ||
+    normalized.includes("哪些人") ||
+    normalized.includes("大家");
+
+  if (!hasQueryWord) return null;
+
+  let workType = null;
+
+  if (normalized.includes("請假") || normalized.includes("休假") || normalized.includes("特休") || normalized.includes("補休")) {
+    workType = "請假";
+  } else if (normalized.includes("會勘")) {
+    workType = "會勘";
+  } else if (normalized.includes("巡檢") || normalized.includes("巡查") || normalized.includes("抽查") || normalized.includes("看設備")) {
+    workType = "工作抽查";
+  } else if (normalized.includes("開會") || normalized.includes("會議")) {
+    workType = "中分局會議";
+  } else if (normalized.includes("出去") || normalized.includes("外出") || normalized.includes("出門") || normalized.includes("去哪")) {
+    workType = null;
+  } else {
+    return null;
+  }
+
+  let range = "today";
+  if (normalized.includes("明天") || normalized.includes("明日")) range = "tomorrow";
+  if (normalized.includes("本週") || normalized.includes("本周") || normalized.includes("這週") || normalized.includes("這周") || normalized.includes("這禮拜")) range = "week";
+  if (normalized.includes("本月") || normalized.includes("這個月")) range = "month";
+
+  return {
+    range,
+    work_type: workType,
+  };
 }
 
 function parseNaturalWorkReport(text) {
@@ -1607,7 +1680,8 @@ JSON 格式：
 
 重要規則：
 - 如果句子有明確時間或日期，而且包含「提醒我、提醒、叫我、通知我、每天、每日、每週、每月、幾分鐘後、幾小時後」這種建立提醒，回 unknown。
-- 如果沒有明確時間日期，而是「我去開會、去會勘、工作抽查、去巡檢、請假」這種工作內容，優先判斷為 create_work_report，不要判斷成提醒。
+- 如果有明確日期或時間，例如「5/26 早上10點要開線上會議」「明天早上8點開會」，優先判斷為建立提醒，所以回 unknown，讓程式建立提醒。
+- 如果沒有明確時間日期，而是「我去開會、去會勘、工作抽查、去巡檢、請假」這種工作內容，才優先判斷為 create_work_report，不要判斷成提醒。
 - 如果是「新增模板、選1、類型1」這種操作，回 unknown。
 - 如果使用者明確說「刪除提醒、取消提醒、停止提醒、刪掉提醒、移除提醒」才回 delete_reminder。
 - 如果使用者明確說「修改提醒、改提醒、改到、改成」才回 update_reminder。
@@ -1650,7 +1724,7 @@ JSON 格式：
 - 「本月工作回報、這個月工作回報」= query_work_report, range=month, work_type=null。
 - 「今天誰請假」= query_work_report, range=today, work_type=請假。
 - 「這週誰請假」= query_work_report, range=week, work_type=請假。
-- 「今天誰去開會」= query_work_report, range=today, work_type=中分局會議。
+- 「今天誰去開會、今天有誰去開會、今天誰開會」= query_work_report, range=today, work_type=中分局會議。
 - 「今天誰去巡檢」= query_work_report, range=today, work_type=工作抽查。
 - 「今天誰去會勘」= query_work_report, range=today, work_type=會勘。
 
@@ -2176,6 +2250,11 @@ function buildTodoOccurrences(reminders, range, rangeName) {
 
   for (const item of reminders) {
     const repeatType = item.repeat_type || "none";
+
+    // 今日待辦與明日待辦只顯示一次性待辦，不混入每天/每週/每月例行公事
+    if ((rangeName === "today" || rangeName === "tomorrow") && repeatType !== "none") {
+      continue;
+    }
 
     if (rangeName === "future") {
       const nextTime = new Date(item.remind_at);
