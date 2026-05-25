@@ -161,7 +161,7 @@ async function handleEvent(event) {
     if (userText === "使用說明") {
       await reply(
         event.replyToken,
-        "你可以這樣使用：\n\n1. 今日待辦\n2. 明天要幹嘛\n3. 未來提醒 / 未來待辦事項\n4. 今天做了什麼\n5. 明天早上8點提醒我開會\n6. 3分鐘後提醒我喝水\n7. 每天早上8點提醒我吃藥\n8. 每週五提醒我交報告\n9. 刪除今日第1個提醒\n10. 刪除喝水提醒\n11. 把喝水提醒改到晚上8點\n12. 今天誰出去 / 這週誰請假"
+        "你可以這樣使用：\n\n1. 今日待辦\n2. 明天要幹嘛\n3. 未來提醒 / 未來待辦事項（直接顯示全部未來）\n4. 今天做了什麼\n5. 明天早上8點提醒我開會\n6. 3分鐘後提醒我喝水\n7. 每天早上8點提醒我吃藥\n8. 每週五提醒我交報告\n9. 刪除今日第1個提醒\n10. 刪除喝水提醒\n11. 把喝水提醒改到晚上8點\n12. 今天誰出去 / 這週誰請假"
       );
       return;
     }
@@ -238,7 +238,7 @@ async function handleEvent(event) {
     }
 
     if (isFutureRangeMenuIntent(normalizedText)) {
-      await showTodoRangeMenu(event.replyToken, userId);
+      await listFutureReminders(event.replyToken, userId);
       return;
     }
 
@@ -253,17 +253,14 @@ async function handleEvent(event) {
     }
 
     // 5. 明確的提醒建立先走本地提醒解析，不要進 AI
-    const isReminderCreationText =
-      normalizedText.includes("提醒我") ||
-      normalizedText.includes("每天") ||
-      normalizedText.includes("每日") ||
-      normalizedText.includes("每週") ||
-      normalizedText.includes("每周") ||
-      normalizedText.includes("每月") ||
-      normalizedText.includes("分鐘後") ||
-      normalizedText.includes("小時後") ||
-      normalizedText.includes("天後") ||
-      /^提醒.+/.test(normalizedText);
+    const workReport = parseWorkReport(userText);
+
+    if (workReport) {
+      await createWorkReport(event.replyToken, event, workReport);
+      return;
+    }
+
+    const isReminderCreationText = isTimeBasedReminderCreationIntent(normalizedText);
 
     if (isReminderCreationText) {
       await createReminderFromText(event.replyToken, userId, userText);
@@ -271,12 +268,6 @@ async function handleEvent(event) {
     }
 
     // 6. 明確工作回報與舊查詢先走本地判斷
-    const workReport = parseWorkReport(userText);
-
-    if (workReport) {
-      await createWorkReport(event.replyToken, event, workReport);
-      return;
-    }
 
     if (isWorkReportQueryIntent(userText)) {
       await listWorkReports(event.replyToken, event, userText);
@@ -295,7 +286,7 @@ async function handleEvent(event) {
     }
 
     if (isFutureRangeMenuIntent(normalizedText)) {
-      await showTodoRangeMenu(event.replyToken, userId);
+      await listFutureReminders(event.replyToken, userId);
       return;
     }
 
@@ -309,7 +300,7 @@ async function handleEvent(event) {
     console.log("AI INTENT:", aiIntent);
 
     if (aiIntent.intent === "query_future_reminders") {
-      await showTodoRangeMenu(event.replyToken, userId);
+      await listFutureReminders(event.replyToken, userId);
       return;
     }
 
@@ -456,6 +447,86 @@ function isWorkReportMenuIntent(text) {
   );
 }
 
+function isTimeBasedReminderCreationIntent(text) {
+  const hasReminderVerb =
+    text.includes("提醒我") ||
+    text.includes("提醒") ||
+    text.includes("叫我") ||
+    text.includes("通知我");
+
+  const hasTimeWord =
+    text.includes("今天") ||
+    text.includes("明天") ||
+    text.includes("後天") ||
+    text.includes("分鐘後") ||
+    text.includes("小時後") ||
+    text.includes("天後") ||
+    text.includes("早上") ||
+    text.includes("上午") ||
+    text.includes("中午") ||
+    text.includes("下午") ||
+    text.includes("晚上") ||
+    text.includes("每天") ||
+    text.includes("每日") ||
+    text.includes("每週") ||
+    text.includes("每周") ||
+    text.includes("每月") ||
+    /[0-9一二兩三四五六七八九十百]+\s*點/.test(text);
+
+  return hasReminderVerb && hasTimeWord;
+}
+
+function parseNaturalWorkReport(text) {
+  const normalizedText = text.trim();
+
+  if (
+    normalizedText.includes("請假") ||
+    normalizedText.includes("休假") ||
+    normalizedText.includes("特休") ||
+    normalizedText.includes("病假") ||
+    normalizedText.includes("補休")
+  ) {
+    return {
+      type: "請假",
+      content: normalizedText,
+    };
+  }
+
+  if (
+    normalizedText.includes("工作抽查") ||
+    normalizedText.includes("巡檢") ||
+    normalizedText.includes("巡查") ||
+    normalizedText.includes("抽查") ||
+    normalizedText.includes("看設備") ||
+    normalizedText.includes("現場看")
+  ) {
+    return {
+      type: "工作抽查",
+      content: normalizedText,
+    };
+  }
+
+  if (normalizedText.includes("會勘")) {
+    return {
+      type: "會勘",
+      content: normalizedText,
+    };
+  }
+
+  if (
+    normalizedText.includes("開會") ||
+    normalizedText.includes("會議") ||
+    normalizedText.includes("去會")
+  ) {
+    return {
+      type: "中分局會議",
+      content: normalizedText,
+    };
+  }
+
+  return null;
+}
+
 async function showWorkReportMenu(replyToken) {
   await reply(
     replyToken,
@@ -539,7 +610,7 @@ function parseWorkReport(text) {
     };
   }
 
-  return null;
+  return parseNaturalWorkReport(normalizedText);
 }
 
 function isWorkReportQueryIntent(text) {
@@ -1126,20 +1197,12 @@ function isAllFutureTodoIntent(text) {
 }
 
 async function showTodoRangeMenu(replyToken, userId) {
-  global.todoRangeCache = global.todoRangeCache || {};
-  global.todoRangeCache[userId] = true;
-
-  await reply(
-    replyToken,
-    `請選擇查詢範圍：
-
-1. 明天
-2. 本週
-3. 本月
-4. 全部未來
-
-請直接輸入數字：1、2、3 或 4`
-  );
+  await queryTodos(replyToken, userId, {
+    range: "future",
+    keyword: null,
+    count_only: false,
+    title: "未來待辦",
+  });
 }
 
 function normalizeQueryKeyword(keyword) {
@@ -1543,14 +1606,15 @@ JSON 格式：
 }
 
 重要規則：
-- 如果是「提醒我、每天、每日、每週、每月、幾分鐘後、幾小時後」這種建立提醒，回 unknown。
+- 如果句子有明確時間或日期，而且包含「提醒我、提醒、叫我、通知我、每天、每日、每週、每月、幾分鐘後、幾小時後」這種建立提醒，回 unknown。
+- 如果沒有明確時間日期，而是「我去開會、去會勘、工作抽查、去巡檢、請假」這種工作內容，優先判斷為 create_work_report，不要判斷成提醒。
 - 如果是「新增模板、選1、類型1」這種操作，回 unknown。
 - 如果使用者明確說「刪除提醒、取消提醒、停止提醒、刪掉提醒、移除提醒」才回 delete_reminder。
 - 如果使用者明確說「修改提醒、改提醒、改到、改成」才回 update_reminder。
 - 如果使用者問「幾個、幾次、多少」，count_only=true。
 
 未來提醒查詢：
-- 「未來提醒、未來待辦、未來待辦事項、未來代辦事項、接下來有什麼事、之後有什麼提醒、我的提醒、所有提醒」= query_future_reminders。
+- 「未來提醒、未來待辦、未來待辦事項、未來代辦事項、接下來有什麼事、之後有什麼提醒、我的提醒、所有提醒」= query_future_reminders，直接查全部未來，不要要求使用者選範圍。
 
 刪除提醒：
 - 「刪除喝水提醒、取消喝水提醒、停止喝水提醒、把喝水提醒刪掉」= delete_reminder, keyword=喝水, range=future。
@@ -2001,6 +2065,10 @@ async function queryTodos(replyToken, userId, options = {}) {
 
   let occurrences = buildTodoOccurrences(data || [], range, rangeName);
 
+  if (rangeName === "today" || rangeName === "tomorrow") {
+    occurrences = occurrences.filter((item) => (item.repeat_type || "none") === "none");
+  }
+
   if (keyword) {
     occurrences = occurrences.filter((item) =>
       item.title.includes(keyword) ||
@@ -2008,7 +2076,16 @@ async function queryTodos(replyToken, userId, options = {}) {
     );
   }
 
-  occurrences.sort((a, b) => new Date(a.time) - new Date(b.time));
+  occurrences.sort((a, b) => {
+    const repeatA = (a.repeat_type || "none") === "none" ? 0 : 1;
+    const repeatB = (b.repeat_type || "none") === "none" ? 0 : 1;
+
+    if (rangeName === "future" && repeatA !== repeatB) {
+      return repeatA - repeatB;
+    }
+
+    return new Date(a.time) - new Date(b.time);
+  });
 
   const titleMap = {
     today: "今日待辦",
