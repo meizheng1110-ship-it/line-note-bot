@@ -196,6 +196,16 @@ async function handleEvent(event) {
       return;
     }
 
+    const noMoreReminderKeyword = parseNoMoreReminderKeyword(normalizedText);
+    if (noMoreReminderKeyword) {
+      await deleteReminderByAi(event.replyToken, userId, {
+        intent: "delete_reminder",
+        range: "future",
+        keyword: noMoreReminderKeyword,
+      });
+      return;
+    }
+
     const localDeleteKeyword = parseDeleteReminderKeyword(normalizedText);
     if (localDeleteKeyword) {
       await deleteReminderByAi(event.replyToken, userId, {
@@ -1316,18 +1326,20 @@ function parseDeleteReminderKeyword(text) {
   const match = text.match(/(?:刪除|刪掉|取消|停止|移除)(.+?)(?:提醒|待辦|代辦)?$/);
   if (!match) return null;
 
-  let keyword = match[1]
-    .replace(/所有/g, "")
-    .replace(/全部/g, "")
-    .replace(/的/g, "")
-    .replace(/提醒/g, "")
-    .replace(/待辦/g, "")
-    .replace(/代辦/g, "")
-    .trim();
+  let keyword = normalizeDeleteKeyword(match[1]);
 
   if (!keyword || keyword.length < 1) return null;
   if (/^(今天|明天|未來|本週|這週|本月)$/.test(keyword)) return null;
 
+  return keyword;
+}
+
+function parseNoMoreReminderKeyword(text) {
+  const match = text.match(/(?:不要再提醒|不用再提醒|別再提醒|不再提醒)(.+)$/);
+  if (!match) return null;
+
+  const keyword = normalizeDeleteKeyword(match[1]);
+  if (!keyword || keyword.length < 1) return null;
   return keyword;
 }
 
@@ -2420,14 +2432,16 @@ async function findReminderCandidates(userId, options = {}) {
     query = query.gte("remind_at", new Date().toISOString());
   }
 
-  if (options.keyword) {
-    query = query.ilike("title", `%${options.keyword}%`);
-  }
+  const keyword = normalizeDeleteKeyword(options.keyword);
 
   const { data, error } = await query;
   if (error) throw error;
 
   let candidates = data || [];
+
+  if (keyword) {
+    candidates = candidates.filter((item) => reminderMatchesKeyword(item, keyword));
+  }
 
   if (options.weekday !== null && options.weekday !== undefined && options.weekday !== "") {
     const weekday = Number(options.weekday);
@@ -2453,6 +2467,48 @@ function getDeleteKeyword(aiIntent) {
   if (aiIntent.keyword) return String(aiIntent.keyword).trim();
   if (aiIntent.content) return String(aiIntent.content).trim();
   return null;
+}
+
+function normalizeSearchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[\s　，,。.!！?？、：:；;（）()【】\[\]「」『』"'`~～_-]/g, "")
+    .replaceAll("代辦", "待辦")
+    .trim();
+}
+
+function getKeywordVariants(keyword) {
+  const normalized = normalizeDeleteKeyword(keyword);
+  if (!normalized || normalized === "ALL") return [];
+
+  const compact = normalizeSearchText(normalized);
+  const variants = new Set([compact]);
+
+  // 讓「安衛檢查表」可以匹配「要做安衛檢查表!(每月)」這類標題
+  const cleaned = compact
+    .replace(/^要做/, "")
+    .replace(/^要/, "")
+    .replace(/^做/, "")
+    .replace(/提醒$/, "")
+    .replace(/待辦$/, "");
+
+  if (cleaned) variants.add(cleaned);
+
+  // 如果使用者輸入比較長，抓出較有意義的核心關鍵字
+  for (const word of ["安衛檢查表", "安衛", "檢查表", "開會", "會議", "會勘", "工作抽查", "巡檢", "吃藥", "喝水", "蒸便當"]) {
+    if (compact.includes(word)) variants.add(word);
+  }
+
+  return [...variants].filter((item) => item && item.length >= 2);
+}
+
+function reminderMatchesKeyword(item, keyword) {
+  const variants = getKeywordVariants(keyword);
+  if (variants.length === 0) return true;
+
+  const haystack = normalizeSearchText(`${item.title || ""} ${item.raw_text || ""}`);
+
+  return variants.some((variant) => haystack.includes(variant));
 }
 
 async function deleteReminderByAi(replyToken, userId, aiIntent) {
@@ -2513,15 +2569,26 @@ function normalizeDeleteKeyword(keyword) {
   if (!keyword) return null;
 
   let text = String(keyword)
-    .replace(/提醒/g, "")
-    .replace(/待辦/g, "")
-    .replace(/代辦/g, "")
+    .replace(/代辦/g, "待辦")
+    .replace(/不要再/g, "")
+    .replace(/不再/g, "")
+    .replace(/不用再/g, "")
+    .replace(/幫我/g, "")
+    .replace(/請/g, "")
     .replace(/我要/g, "")
     .replace(/我想/g, "")
+    .replace(/我/g, "")
     .replace(/刪除/g, "")
+    .replace(/刪掉/g, "")
+    .replace(/刪/g, "")
     .replace(/取消/g, "")
     .replace(/停止/g, "")
+    .replace(/移除/g, "")
+    .replace(/提醒/g, "")
+    .replace(/待辦/g, "")
+    .replace(/的/g, "")
     .replace(/全部/g, "所有")
+    .replace(/[\s　，,。.!！?？、：:；;（）()【】\[\]「」『』"'`~～_-]/g, "")
     .trim();
 
   if (["所有", "所有的", "全部", "全部的"].includes(text)) return "ALL";
