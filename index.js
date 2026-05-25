@@ -2704,19 +2704,19 @@ cron.schedule("0 * * * * *", async () => {
 
         console.log("提醒已發送:", reminder.title, reminder.remind_at);
       } catch (err) {
-        console.error("PUSH MESSAGE ERROR:", err);
+          console.error("PUSH MESSAGE ERROR FULL:", err);
 
-        const failedStatus = isLineMonthlyLimitError(err) ? "push_failed_quota" : "push_failed";
+          if (err.response) {
+            console.error("LINE RESPONSE:", err.response.data);
+          }
 
-        await supabase
-          .from("reminders")
-          .update({
-            status: failedStatus,
-          })
-          .eq("id", reminder.id);
-      } finally {
-        processingReminderIds.delete(reminder.id);
-      }
+          await supabase
+            .from("reminders")
+            .update({
+              status: "push_failed",
+            })
+            .eq("id", reminder.id);
+        }
     }
   } catch (err) {
     console.error("CRON ERROR:", err);
