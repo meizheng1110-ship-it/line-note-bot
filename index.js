@@ -2590,8 +2590,6 @@ cron.schedule("0 * * * * *", async () => {
       return;
     }
 
-    const sentKeys = new Set();
-
     for (const reminder of data || []) {
       try {
         const sentKey = `${reminder.id}_${reminder.remind_at}`;
@@ -2607,7 +2605,6 @@ cron.schedule("0 * * * * *", async () => {
           sentCache.clear();
         }
 
-        sentKeys.add(duplicateKey);
 
         const { data: claimedRows, error: claimError } = await supabase
           .from("reminders")
