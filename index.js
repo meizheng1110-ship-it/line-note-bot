@@ -2939,9 +2939,7 @@ function parseInspectionInfo(text) {
 async function handleInspectionPhotoEvent(event, userId) {
   const draft = inspectionDrafts.get(userId);
 
-  if (!draft) {
-    return;
-  }
+  if (!draft) return;
 
   if (draft.step !== "photos") {
     await reply(event.replyToken, "請先輸入檢查表資料，再上傳照片。");
@@ -2954,11 +2952,12 @@ async function handleInspectionPhotoEvent(event, userId) {
     inspectionDrafts.set(userId, draft);
 
     if (draft.photos.length < 2) {
-      await reply(event.replyToken, `已收到第 ${draft.photos.length} 張照片 ✅\n請再上傳第 ${draft.photos.length + 1} 張照片。`);
+      await reply(
+        event.replyToken,
+        `已收到第 ${draft.photos.length} 張照片 ✅\n請再上傳第 ${draft.photos.length + 1} 張照片。`
+      );
       return;
     }
-
-    await reply(event.replyToken, "已收到 2 張照片 ✅\n正在產生 PDF，請稍候。");
 
     const result = await generateInspectionPdf(userId, draft);
     inspectionDrafts.delete(userId);
