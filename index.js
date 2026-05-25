@@ -47,6 +47,10 @@ fs.mkdirSync(GENERATED_DIR, { recursive: true });
 
 const inspectionDrafts = new Map();
 
+function getInspectionDraftKey(userId) {
+  return `inspection_${userId}`;
+}
+
 app.use("/reports", express.static(GENERATED_DIR));
 
 app.get("/", (req, res) => {
@@ -66,7 +70,7 @@ async function handleEvent(event) {
   if (event.type !== "message") return;
 
   try {
-    const userId = event.source.groupId || event.source.userId;
+    const userId = event.source.userId || event.source.groupId || event.source.roomId;
 
     // 報表照片上傳流程：只有使用者正在建立檢查表時才處理圖片
     if (event.message.type === "image") {
@@ -85,7 +89,7 @@ async function handleEvent(event) {
       return;
     }
 
-    if (inspectionDrafts.has(userId)) {
+    if (inspectionDrafts.has(getInspectionDraftKey(userId))) {
       await handleInspectionTextStep(event.replyToken, userId, userText);
       return;
     }
@@ -2852,7 +2856,9 @@ function getInspectionTypeFromText(text) {
 async function startInspectionReportFlow(replyToken, userId, text) {
   const reportType = getInspectionTypeFromText(text);
 
-  inspectionDrafts.set(userId, {
+  const draftKey = getInspectionDraftKey(userId);
+
+  inspectionDrafts.set(draftKey, {
     step: "info",
     reportType,
     photos: [],
@@ -2875,11 +2881,12 @@ async function startInspectionReportFlow(replyToken, userId, text) {
 }
 
 async function handleInspectionTextStep(replyToken, userId, userText) {
-  const draft = inspectionDrafts.get(userId);
+  const draftKey = getInspectionDraftKey(userId);
+  const draft = inspectionDrafts.get(draftKey);
   if (!draft) return false;
 
   if (["取消", "取消報表", "取消檢查表"].includes(userText.trim())) {
-    inspectionDrafts.delete(userId);
+    inspectionDrafts.delete(draftKey);
     await reply(replyToken, "已取消建立檢查表");
     return true;
   }
@@ -2902,7 +2909,7 @@ async function handleInspectionTextStep(replyToken, userId, userText) {
 
     draft.info = info;
     draft.step = "photos";
-    inspectionDrafts.set(userId, draft);
+    inspectionDrafts.set(draftKey, draft);
 
     await reply(
       replyToken,
@@ -2941,7 +2948,8 @@ function parseInspectionInfo(text) {
 }
 
 async function handleInspectionPhotoEvent(event, userId) {
-  const draft = inspectionDrafts.get(userId);
+  const draftKey = getInspectionDraftKey(userId);
+  const draft = inspectionDrafts.get(draftKey);
 
   if (!draft) return;
 
@@ -2953,7 +2961,7 @@ async function handleInspectionPhotoEvent(event, userId) {
   try {
     const buffer = await getLineImageBuffer(event.message.id);
     draft.photos.push(buffer);
-    inspectionDrafts.set(userId, draft);
+    inspectionDrafts.set(draftKey, draft);
 
     if (draft.photos.length < 2) {
       await reply(
@@ -2964,7 +2972,7 @@ async function handleInspectionPhotoEvent(event, userId) {
     }
 
     const result = await generateInspectionPdf(userId, draft);
-    inspectionDrafts.delete(userId);
+    inspectionDrafts.delete(draftKey);
 
     await reply(
       event.replyToken,
