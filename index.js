@@ -4,6 +4,9 @@ import dotenv from "dotenv";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 import cron from "node-cron";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 dotenv.config();
 
@@ -30,6 +33,18 @@ const client = new line.messagingApi.MessagingApiClient({
 
 const sentCache = new Set();
 
+// ===== Inspection report PDF feature =====
+// Keep report generation isolated. Normal reminder / work-report messages do not load PDFKit,
+// so the bot will not become slower in daily use.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const GENERATED_DIR = path.join(__dirname, "generated_reports");
+fs.mkdirSync(GENERATED_DIR, { recursive: true });
+
+const inspectionDrafts = new Map();
+
+app.use("/reports", express.static(GENERATED_DIR));
+
 app.get("/", (req, res) => {
   res.send("LINE BOT RUNNING");
 });
@@ -45,12 +60,31 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 
 async function handleEvent(event) {
   if (event.type !== "message") return;
-  if (event.message.type !== "text") return;
 
   try {
+    const userId = event.source.groupId || event.source.userId;
+
+    // 報表照片上傳流程：只有使用者正在建立檢查表時才處理圖片
+    if (event.message.type === "image") {
+      await handleInspectionPhotoEvent(event, userId);
+      return;
+    }
+
+    if (event.message.type !== "text") return;
+
     const userText = event.message.text.trim();
     const normalizedText = normalizeInputText(userText);
-    const userId = event.source.groupId || event.source.userId;
+
+    // 報表功能入口：放在最前面，命中才進入，不會拖慢其他功能
+    if (isInspectionStartIntent(normalizedText)) {
+      await startInspectionReportFlow(event.replyToken, userId, normalizedText);
+      return;
+    }
+
+    if (inspectionDrafts.has(userId)) {
+      await handleInspectionTextStep(event.replyToken, userId, userText);
+      return;
+    }
 
     // 0. 未來待辦查詢範圍選擇：使用者點「未來待辦」後，可直接輸入 1~4
     if (global.todoRangeCache?.[userId] && /^[1-4]$/.test(userText)) {
@@ -2772,6 +2806,438 @@ async function deleteFutureReminder(replyToken, userId, number) {
 
   await reply(replyToken, `已刪除未來提醒：${target.title}`);
 }
+
+// ===============================
+// Inspection report PDF functions
+// ===============================
+
+function isInspectionStartIntent(text) {
+  return [
+    "建立環境檢查表",
+    "環境檢查表",
+    "新增環境檢查表",
+    "建立安衛檢查表",
+    "安衛檢查表",
+    "新增安衛檢查表",
+    "建立安全衛生檢查表",
+    "安全衛生檢查表",
+    "新增安全衛生檢查表",
+  ].includes(text);
+}
+
+function getInspectionTypeFromText(text) {
+  if (text.includes("環境")) {
+    return {
+      type: "environment",
+      label: "環境檢查表",
+      prefix: "環",
+      title: "環境保護措施檢查照片表",
+      defaultDescription: "環境檢查",
+    };
+  }
+
+  return {
+    type: "safety",
+    label: "安全衛生檢查表",
+    prefix: "安",
+    title: "安全衛生抽查照片黏貼表",
+    defaultDescription: "安全衛生抽查",
+  };
+}
+
+async function startInspectionReportFlow(replyToken, userId, text) {
+  const reportType = getInspectionTypeFromText(text);
+
+  inspectionDrafts.set(userId, {
+    step: "info",
+    reportType,
+    photos: [],
+    createdAt: Date.now(),
+  });
+
+  await reply(
+    replyToken,
+    `開始建立${reportType.label} ✅
+
+請一次輸入以下資料：
+
+日期：115/05/26
+地點：交控中心3樓機房
+項目1：環境清潔內業檢查
+項目2：環境清潔檢查
+
+接著再上傳兩張照片。`
+  );
+}
+
+async function handleInspectionTextStep(replyToken, userId, userText) {
+  const draft = inspectionDrafts.get(userId);
+  if (!draft) return false;
+
+  if (["取消", "取消報表", "取消檢查表"].includes(userText.trim())) {
+    inspectionDrafts.delete(userId);
+    await reply(replyToken, "已取消建立檢查表");
+    return true;
+  }
+
+  if (draft.step === "info") {
+    const info = parseInspectionInfo(userText);
+
+    if (!info.date || !info.location || !info.item1) {
+      await reply(
+        replyToken,
+        `資料不完整，請照這個格式輸入：
+
+日期：115/05/26
+地點：交控中心3樓機房
+項目1：環境清潔內業檢查
+項目2：環境清潔檢查`
+      );
+      return true;
+    }
+
+    draft.info = info;
+    draft.step = "photos";
+    inspectionDrafts.set(userId, draft);
+
+    await reply(
+      replyToken,
+      `資料已收到 ✅
+
+日期：${info.date}
+地點：${info.location}
+項目1：${info.item1}
+項目2：${info.item2 || info.item1}
+
+請接著上傳第 1 張照片。`
+    );
+    return true;
+  }
+
+  if (draft.step === "photos") {
+    await reply(replyToken, `請直接上傳照片，目前已收到 ${draft.photos.length}/2 張。輸入「取消」可以取消。`);
+    return true;
+  }
+
+  return true;
+}
+
+function parseInspectionInfo(text) {
+  const dateMatch = text.match(/日期[:：]\s*([^\n]+)/);
+  const locationMatch = text.match(/(?:地點|抽查地點)[:：]\s*([^\n]+)/);
+  const item1Match = text.match(/(?:項目1|項目一|施工項目1|施工項目一|項目)[:：]\s*([^\n]+)/);
+  const item2Match = text.match(/(?:項目2|項目二|施工項目2|施工項目二)[:：]\s*([^\n]+)/);
+
+  return {
+    date: dateMatch?.[1]?.trim() || null,
+    location: locationMatch?.[1]?.trim() || null,
+    item1: item1Match?.[1]?.trim() || null,
+    item2: item2Match?.[1]?.trim() || item1Match?.[1]?.trim() || null,
+  };
+}
+
+async function handleInspectionPhotoEvent(event, userId) {
+  const draft = inspectionDrafts.get(userId);
+
+  if (!draft) {
+    return;
+  }
+
+  if (draft.step !== "photos") {
+    await reply(event.replyToken, "請先輸入檢查表資料，再上傳照片。");
+    return;
+  }
+
+  try {
+    const buffer = await getLineImageBuffer(event.message.id);
+    draft.photos.push(buffer);
+    inspectionDrafts.set(userId, draft);
+
+    if (draft.photos.length < 2) {
+      await reply(event.replyToken, `已收到第 ${draft.photos.length} 張照片 ✅\n請再上傳第 ${draft.photos.length + 1} 張照片。`);
+      return;
+    }
+
+    await reply(event.replyToken, "已收到 2 張照片 ✅\n正在產生 PDF，請稍候。");
+
+    const result = await generateInspectionPdf(userId, draft);
+    inspectionDrafts.delete(userId);
+
+    await reply(
+      event.replyToken,
+      `檢查表已建立 ✅
+編號：${result.reportNo}
+
+PDF：
+${result.pdfUrl}`
+    );
+  } catch (error) {
+    console.error("INSPECTION PHOTO ERROR:", error);
+    await reply(event.replyToken, "產生檢查表失敗，請再試一次。");
+  }
+}
+
+async function getLineImageBuffer(messageId) {
+  const stream = await client.getMessageContent(messageId);
+  const chunks = [];
+
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+
+  return Buffer.concat(chunks);
+}
+
+function parseRocDateParts(dateText) {
+  const text = String(dateText || "").trim();
+
+  let match = text.match(/(\d{2,3})[./-](\d{1,2})[./-](\d{1,2})/);
+  if (match) {
+    return {
+      rocYear: Number(match[1]),
+      month: Number(match[2]),
+      day: Number(match[3]),
+    };
+  }
+
+  match = text.match(/(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
+  if (match) {
+    return {
+      rocYear: Number(match[1]) - 1911,
+      month: Number(match[2]),
+      day: Number(match[3]),
+    };
+  }
+
+  const now = new Date();
+  const taipei = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  return {
+    rocYear: taipei.getUTCFullYear() - 1911,
+    month: taipei.getUTCMonth() + 1,
+    day: taipei.getUTCDate(),
+  };
+}
+
+function formatRocDate(dateText) {
+  const parts = parseRocDateParts(dateText);
+  return `${parts.rocYear}.${String(parts.month).padStart(2, "0")}.${String(parts.day).padStart(2, "0")}`;
+}
+
+async function generateInspectionNumber(reportType, dateText) {
+  const parts = parseRocDateParts(dateText);
+  const prefix = reportType.prefix;
+  const yymmdd = `${parts.rocYear}${String(parts.month).padStart(2, "0")}${String(parts.day).padStart(2, "0")}`;
+
+  const { count, error } = await supabase
+    .from("inspection_reports")
+    .select("id", { count: "exact", head: true })
+    .eq("report_type", reportType.type)
+    .gte("report_no", `${prefix}${yymmdd}00`)
+    .lte("report_no", `${prefix}${yymmdd}99`);
+
+  if (error) {
+    console.error("GENERATE INSPECTION NUMBER ERROR:", error);
+  }
+
+  const serial = String((count || 0) + 1).padStart(2, "0");
+  return `${prefix}${yymmdd}${serial}`;
+}
+
+function getPublicBaseUrl() {
+  if (process.env.PUBLIC_BASE_URL) {
+    return process.env.PUBLIC_BASE_URL.replace(/\/$/, "");
+  }
+
+  if (process.env.RENDER_EXTERNAL_HOSTNAME) {
+    return `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`;
+  }
+
+  return "";
+}
+
+function findChineseFontPath() {
+  const candidates = [
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJKtc-Regular.otf",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/System/Library/Fonts/PingFang.ttc",
+    "C:/Windows/Fonts/msjh.ttc",
+  ];
+
+  return candidates.find((item) => fs.existsSync(item)) || null;
+}
+
+async function generateInspectionPdf(userId, draft) {
+  const { default: PDFDocument } = await import("pdfkit");
+
+  const reportType = draft.reportType;
+  const info = draft.info;
+  const reportNo = await generateInspectionNumber(reportType, info.date);
+  const safeReportNo = reportNo.replace(/[^\w\u4e00-\u9fa5-]/g, "");
+  const pdfName = `${safeReportNo}.pdf`;
+  const pdfPath = path.join(GENERATED_DIR, pdfName);
+
+  const doc = new PDFDocument({
+    size: "A4",
+    margin: 36,
+    autoFirstPage: true,
+  });
+
+  const fontPath = findChineseFontPath();
+  if (fontPath) {
+    doc.font(fontPath);
+  }
+
+  const stream = fs.createWriteStream(pdfPath);
+  doc.pipe(stream);
+
+  drawInspectionPdfPage(doc, {
+    reportType,
+    reportNo,
+    info,
+    photo1: draft.photos[0],
+    photo2: draft.photos[1],
+  });
+
+  doc.end();
+
+  await new Promise((resolve, reject) => {
+    stream.on("finish", resolve);
+    stream.on("error", reject);
+  });
+
+  const publicBaseUrl = getPublicBaseUrl();
+  const pdfUrl = publicBaseUrl
+    ? `${publicBaseUrl}/reports/${encodeURIComponent(pdfName)}`
+    : `/reports/${encodeURIComponent(pdfName)}`;
+
+  await saveInspectionReportRecord({
+    userId,
+    reportType,
+    reportNo,
+    info,
+    pdfUrl,
+  });
+
+  return {
+    reportNo,
+    pdfPath,
+    pdfUrl,
+  };
+}
+
+function drawInspectionPdfPage(doc, payload) {
+  const { reportType, reportNo, info, photo1, photo2 } = payload;
+  const pageWidth = doc.page.width;
+  const margin = 36;
+  const contentWidth = pageWidth - margin * 2;
+
+  doc.fontSize(18).text("交通部高速公路局中區養護工程分局", margin, 32, {
+    align: "center",
+    width: contentWidth,
+  });
+
+  doc.fontSize(20).text(reportType.title, margin, 62, {
+    align: "center",
+    width: contentWidth,
+  });
+
+  doc.fontSize(11).text(`編號：${reportNo}`, margin, 100);
+  doc.text("第 1 頁 共 1 頁", pageWidth - 150, 100);
+
+  drawPhotoBlock(doc, {
+    x: margin,
+    y: 125,
+    w: contentWidth,
+    h: 300,
+    reportType,
+    reportNo,
+    date: formatRocDate(info.date),
+    location: info.location,
+    item: info.item1,
+    photo: photo1,
+  });
+
+  drawPhotoBlock(doc, {
+    x: margin,
+    y: 435,
+    w: contentWidth,
+    h: 300,
+    reportType,
+    reportNo,
+    date: formatRocDate(info.date),
+    location: info.location,
+    item: info.item2 || info.item1,
+    photo: photo2,
+  });
+
+  doc.fontSize(9).text("註：本表乙份由抽查單位存查。", margin, 750, {
+    align: "right",
+    width: contentWidth,
+  });
+}
+
+function drawPhotoBlock(doc, options) {
+  const { x, y, w, h, reportType, date, location, item, photo } = options;
+  const leftW = 125;
+  const gap = 8;
+  const photoX = x + leftW + gap;
+  const photoW = w - leftW - gap;
+
+  doc.rect(x, y, w, h).stroke();
+  doc.moveTo(x + leftW, y).lineTo(x + leftW, y + h).stroke();
+
+  doc.fontSize(11);
+  doc.text(`說明：\n${reportType.defaultDescription}`, x + 8, y + 12, {
+    width: leftW - 16,
+    lineGap: 5,
+  });
+
+  doc.text(`日期：${date}`, x + 8, y + 92, {
+    width: leftW - 16,
+  });
+
+  doc.text(`施工項目：\n${item}`, x + 8, y + 135, {
+    width: leftW - 16,
+    lineGap: 5,
+  });
+
+  doc.text(`地點：\n${location}`, x + 8, y + 220, {
+    width: leftW - 16,
+    lineGap: 5,
+  });
+
+  try {
+    doc.image(photo, photoX + 6, y + 6, {
+      fit: [photoW - 12, h - 12],
+      align: "center",
+      valign: "center",
+    });
+  } catch (error) {
+    console.error("DRAW PHOTO ERROR:", error);
+    doc.text("照片載入失敗", photoX + 20, y + 120);
+  }
+}
+
+async function saveInspectionReportRecord(payload) {
+  const { userId, reportType, reportNo, info, pdfUrl } = payload;
+
+  const { error } = await supabase.from("inspection_reports").insert({
+    line_user_id: userId,
+    report_type: reportType.type,
+    report_no: reportNo,
+    report_date: formatRocDate(info.date),
+    location: info.location,
+    item1: info.item1,
+    item2: info.item2 || info.item1,
+    pdf_url: pdfUrl,
+  });
+
+  if (error) {
+    console.error("SAVE INSPECTION REPORT ERROR:", error);
+  }
+}
+
 
 async function reply(replyToken, text) {
   await client.replyMessage({
