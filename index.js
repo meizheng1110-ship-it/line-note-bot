@@ -31,6 +31,10 @@ const client = new line.messagingApi.MessagingApiClient({
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
 });
 
+const blobClient = new line.messagingApi.MessagingApiBlobClient({
+  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
+});
+
 const sentCache = new Set();
 
 // ===== Inspection report PDF feature =====
@@ -2971,20 +2975,16 @@ PDF：
 ${result.pdfUrl}`
     );
   } catch (error) {
-    console.error("INSPECTION PHOTO ERROR:", error);
+    console.error("INSPECTION PHOTO ERROR FULL:", error);
+    console.error("INSPECTION PHOTO ERROR STATUS:", error?.status || error?.response?.status);
+    console.error("INSPECTION PHOTO ERROR BODY:", error?.body || error?.response?.data);
     await reply(event.replyToken, "產生檢查表失敗，請再試一次。");
   }
 }
 
 async function getLineImageBuffer(messageId) {
-  const stream = await client.getMessageContent(messageId);
-  const chunks = [];
-
-  for await (const chunk of stream) {
-    chunks.push(chunk);
-  }
-
-  return Buffer.concat(chunks);
+  const arrayBuffer = await blobClient.getMessageContent(messageId);
+  return Buffer.from(arrayBuffer);
 }
 
 function parseRocDateParts(dateText) {
