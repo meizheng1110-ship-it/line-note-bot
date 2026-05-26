@@ -2828,27 +2828,26 @@ function isInspectionStartIntent(text) {
 }
 
 function getInspectionTypeFromText(text) {
-
-  // 環保
   if (text.includes("環保") || text.includes("環境")) {
     return {
       type: "environment",
       label: "環保檢查表",
+      prefix: "環",
     };
   }
 
-  // 工作抽查
   if (text.includes("工作")) {
     return {
       type: "work",
       label: "工作抽查表",
+      prefix: "工",
     };
   }
 
-  // 安衛
   return {
     type: "safety",
     label: "安全衛生檢查表",
+    prefix: "安",
   };
 }
 
@@ -2906,26 +2905,22 @@ async function handleInspectionTextStep(replyToken, userId, userText) {
   // =========================
 
   if (text === "產生安衛2張版型") {
+  draft.forcePhotoCount = 2;
 
-    draft.forcePhotoCount = 2;
+  const pdfResult = await generateInspectionPdf(userId, draft);
+  inspectionDrafts.delete(draftKey);
 
-    const result = await generateInspectionPdf(
-      userId,
-      draft
-    );
-
-    inspectionDrafts.delete(draftKey);
-
-    await reply(
-      replyToken,
-      `檢查表已建立 ✅
+  await reply(
+    replyToken,
+    `檢查表已建立 ✅
+編號：${pdfResult.reportNo}
 
 PDF：
-${result.pdfUrl}`
-    );
+${pdfResult.pdfUrl}`
+  );
 
-    return true;
-  }
+  return true;
+}
 
   // =========================
   // 安衛3張版型
@@ -3081,7 +3076,7 @@ function parseInspectionInfo(text) {
   const locationMatch = text.match(/(?:地點|抽查地點)[:：]\s*([^\n]+)/);
   const item1Match = text.match(/(?:項目1|項目一|施工項目1|施工項目一|項目)[:：]\s*([^\n]+)/);
   const item2Match = text.match(/(?:項目2|項目二|施工項目2|施工項目二)[:：]\s*([^\n]+)/);
-
+  const item3Match = text.match(/(?:項目3|項目三|施工項目3|施工項目三)[:：]\s*([^\n]+)/);
   return {
     projectName:
   text.match(/案名[:：]\s*(.+)/)?.[1] || "",
@@ -3089,6 +3084,7 @@ function parseInspectionInfo(text) {
     location: locationMatch?.[1]?.trim() || null,
     item1: item1Match?.[1]?.trim() || null,
     item2: item2Match?.[1]?.trim() || item1Match?.[1]?.trim() || null,
+    item3: item3Match?.[1]?.trim() || item2Match?.[1]?.trim() || item1Match?.[1]?.trim() || null,
   };
 }
 
@@ -3098,7 +3094,7 @@ async function handleInspectionPhotoEvent(event, userId) {
 
   if (!draft) return;
 
-  if (draft.step !== "photos") {
+  if (!["photos", "wait_third_photo"].includes(draft.step)) {
     await reply(event.replyToken, "請先輸入檢查表資料，再上傳照片。");
     return;
   }
@@ -3108,102 +3104,58 @@ async function handleInspectionPhotoEvent(event, userId) {
     draft.photos.push(buffer);
     inspectionDrafts.set(draftKey, draft);
 
-    // 安衛檢查表
-if (draft.reportType.type === "safety") {
+    if (draft.reportType.type === "safety") {
+      if (draft.photos.length === 1) {
+        await reply(event.replyToken, "已收到第 1 張照片 ✅\n請上傳第 2 張照片。");
+        return;
+      }
 
-  // 第1張
-  if (draft.photos.length === 1) {
+      if (draft.photos.length === 2) {
+        draft.step = "wait_safety_choice";
+        inspectionDrafts.set(draftKey, draft);
+        await replySafetyPhotoChoice(event.replyToken);
+        return;
+      }
 
-    await reply(
-      event.replyToken,
-      "已收到第 1 張照片 ✅\n請上傳第 2 張照片。"
-    );
+      if (draft.photos.length === 3) {
+        draft.forcePhotoCount = 3;
 
-    return;
-  }
+        const pdfResult = await generateInspectionPdf(userId, draft);
+        inspectionDrafts.delete(draftKey);
 
-  // 第2張
-  if (draft.photos.length === 2) {
-
-    draft.step = "wait_safety_choice";
-
-    inspectionDrafts.set(draftKey, draft);
-
-    await replySafetyPhotoChoice(event.replyToken);
-
-    return;
-  }
-
-  // 第3張
-  if (draft.photos.length === 3) {
-
-    draft.forcePhotoCount = 3;
-
-    const result = await generateInspectionPdf(
-      userId,
-      draft
-    );
-
-    inspectionDrafts.delete(draftKey);
-
-    await reply(
-      event.replyToken,
-      `檢查表已建立 ✅
-
-PDF：
-${result.pdfUrl}`
-    );
-
-    return;
-  }
-}
-
-// 環保 / 工作抽查 固定2張
-if (draft.photos.length < 2) {
-
-  await reply(
-    event.replyToken,
-    `已收到第 ${draft.photos.length} 張照片`
-  );
-
-  return;
-}
-
-const pdfResult = await generateInspectionPdf(
-  userId,
-  draft
-);
-
-inspectionDrafts.delete(draftKey);
-
-await reply(
-  replyToken,
-  `檢查表已建立 ✅
+        await reply(
+          event.replyToken,
+          `檢查表已建立 ✅
+編號：${pdfResult.reportNo}
 
 PDF：
 ${pdfResult.pdfUrl}`
-);
+        );
+        return;
+      }
+    }
 
-    const result = await generateInspectionPdf(userId, draft);
+    if (draft.photos.length < 2) {
+      await reply(event.replyToken, `已收到第 ${draft.photos.length} 張照片 ✅\n請再上傳下一張照片。`);
+      return;
+    }
+
+    const pdfResult = await generateInspectionPdf(userId, draft);
     inspectionDrafts.delete(draftKey);
 
     await reply(
       event.replyToken,
       `檢查表已建立 ✅
-編號：${result.reportNo}
+編號：${pdfResult.reportNo}
 
 PDF：
-${result.pdfUrl}`
+${pdfResult.pdfUrl}`
     );
   } catch (error) {
     console.error("INSPECTION PHOTO ERROR FULL:", error);
-    console.error("INSPECTION PHOTO ERROR STATUS:", error?.status || error?.response?.status);
-    console.error("INSPECTION PHOTO ERROR BODY:", error?.body || error?.response?.data);
-    console.error("INSPECTION PHOTO ERROR JSON:", JSON.stringify(error, null, 2));
     await reply(event.replyToken, "產生檢查表失敗，請再試一次。");
   }
 }
-
 async function getLineImageBuffer(messageId) {
   const stream = await blobClient.getMessageContent(messageId);
   const chunks = [];
@@ -3286,17 +3238,17 @@ function findChineseFontPath() {
   // PDFKit 內建字型不支援中文，Render 上如果沒有中文字型就會變亂碼。
   // 建議在專案根目錄新增：fonts/NotoSansTC-Regular.otf
   const candidates = [
-    path.join(__dirname, "fonts", "NotoSansTC-Regular.ttf"),
-    path.join(__dirname, "fonts", "NotoSansTC-Medium.ttf"),
-    path.join(__dirname, "fonts", "NotoSansCJKtc-Regular.otf"),
-    path.join(__dirname, "fonts", "NotoSansCJK-Regular.ttc"),
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/opentype/noto/NotoSansCJKtc-Regular.otf",
-    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/truetype/noto/NotoSansTC-Regular.ttf",
+    path.join(__dirname, "font", "NotoSansTC-Regular.ttf"),
+    path.join(__dirname, "font", "NotoSansTC-Medium.ttf"),
+    path.join(__dirname, "font", "NotoSansCJKtc-Regular.otf"),
+    path.join(__dirname, "font", "NotoSansCJK-Regular.ttc"),
+    "/usr/share/font/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/font/opentype/noto/NotoSansCJKtc-Regular.otf",
+    "/usr/share/font/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/font/truetype/noto/NotoSansTC-Regular.ttf",
     "/System/Library/Fonts/PingFang.ttc",
-    "C:/Windows/Fonts/msjh.ttc",
-    "C:/Windows/Fonts/msjhbd.ttc",
+    "C:/Windows/Font/msjh.ttc",
+    "C:/Windows/Font/msjhbd.ttc",
   ];
 
   return candidates.find((item) => fs.existsSync(item)) || null;
@@ -3330,12 +3282,15 @@ async function generateInspectionPdf(userId, draft) {
   doc.pipe(stream);
 
   drawInspectionPdfPage(doc, {
-    reportType,
-    reportNo,
-    info,
-    photo1: draft.photos[0],
-    photo2: draft.photos[1],
-  });
+  reportType,
+  reportNo,
+  info,
+  photos: draft.photos,
+  photo1: draft.photos[0],
+  photo2: draft.photos[1],
+  photo3: draft.photos[2],
+  forcePhotoCount: draft.forcePhotoCount || null,
+});
 
   doc.end();
 
@@ -3431,14 +3386,73 @@ function drawInspectionPdfPage(doc, payload) {
     );
   }
 }
-function drawSafetyInspectionPdfPage3(
-  doc,
-  payload
-) {
+function drawSafetyInspectionPdfPage3(doc, payload) {
+  const { reportNo, info, photo1, photo2, photo3 } = payload;
+  const pageWidth = doc.page.width;
+  const margin = 42;
+  const contentWidth = pageWidth - margin * 2;
 
-  // 直接複製2張版型
+  doc.fontSize(14).text("交通部高速公路局中區養護工程分局", margin, 38, {
+    align: "center",
+    width: contentWidth,
+  });
 
-  // 把高度縮小成3格即可
+  doc.fontSize(16).text("安全衛生抽查照片黏貼表", margin, 62, {
+    align: "center",
+    width: contentWidth,
+  });
+
+  doc.fontSize(9).text(`抽查編號：${reportNo}`, margin, 92, {
+    width: 250,
+  });
+
+  doc.fontSize(9).text("第 1 頁 共 1 頁", pageWidth - margin - 110, 92, {
+    align: "right",
+    width: 110,
+  });
+
+  drawSafetyPhotoBlock(doc, {
+    x: margin,
+    y: 110,
+    w: contentWidth,
+    h: 215,
+    description: "安全衛生抽查",
+    date: formatRocDate(info.date),
+    item: info.item1,
+    location: info.location,
+    photo: photo1,
+  });
+
+  drawSafetyPhotoBlock(doc, {
+    x: margin,
+    y: 325,
+    w: contentWidth,
+    h: 215,
+    description: "安全衛生抽查",
+    date: formatRocDate(info.date),
+    item: info.item2 || info.item1,
+    location: info.location,
+    photo: photo2,
+  });
+
+  drawSafetyPhotoBlock(doc, {
+    x: margin,
+    y: 540,
+    w: contentWidth,
+    h: 215,
+    description: "安全衛生抽查",
+    date: formatRocDate(info.date),
+    item: info.item3 || info.item2 || info.item1,
+    location: info.location,
+    photo: photo3,
+  });
+
+  doc.save();
+  doc.rotate(90, { origin: [pageWidth - 24, 120] });
+  doc.fontSize(8).text("註：本表乙份由抽查單位存查。", pageWidth - 24, 120, {
+    width: 260,
+  });
+  doc.restore();
 }
 
 function drawEnvironmentInspectionPdfPage(doc, payload) {
@@ -3474,36 +3488,43 @@ function drawEnvironmentInspectionPdfPage(doc, payload) {
     photo: photo2,
   });
 }
-function drawWorkInspectionPdfPage(
-  doc,
-  payload
-) {
+function drawWorkInspectionPdfPage(doc, payload) {
+  const { info, photo1, photo2 } = payload;
+  const pageWidth = doc.page.width;
+  const margin = 58;
+  const contentWidth = pageWidth - margin * 2;
 
-  const {
-    info,
-    photo1,
-    photo2,
-  } = payload;
+  doc.fontSize(15).text(info.projectName || "工作抽查", margin, 28, {
+    align: "center",
+    width: contentWidth,
+  });
 
-  doc.fontSize(16).text(
-    info.projectName,
-    0,
-    30,
-    {
-      align: "center",
-    }
-  );
+  doc.fontSize(16).text("工作抽查紀錄相片", margin, 56, {
+    align: "center",
+    width: contentWidth,
+  });
 
-  doc.fontSize(16).text(
-    "工作抽查紀錄相片",
-    0,
-    60,
-    {
-      align: "center",
-    }
-  );
+  drawEnvironmentPhotoBlock(doc, {
+    x: margin,
+    y: 88,
+    w: contentWidth,
+    h: 345,
+    date: formatRocDate(info.date),
+    location: info.location,
+    item: info.item1,
+    photo: photo1,
+  });
 
-  // 下面直接複製你環保版型即可
+  drawEnvironmentPhotoBlock(doc, {
+    x: margin,
+    y: 455,
+    w: contentWidth,
+    h: 345,
+    date: formatRocDate(info.date),
+    location: info.location,
+    item: info.item2 || info.item1,
+    photo: photo2,
+  });
 }
 
 function drawEnvironmentPhotoBlock(doc, options) {
@@ -3544,7 +3565,7 @@ function drawEnvironmentPhotoBlock(doc, options) {
   });
 }
 
-function drawSafetyInspectionPdfPage(doc, payload) {
+function drawSafetyInspectionPdfPage2(doc, payload) {
   const { reportNo, info, photo1, photo2 } = payload;
   const pageWidth = doc.page.width;
   const margin = 42;
