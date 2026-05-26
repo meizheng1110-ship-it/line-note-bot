@@ -2863,6 +2863,26 @@ async function startInspectionReportFlow(replyToken, userId, text) {
     createdAt: Date.now(),
   });
 
+  // 工作抽查表
+  if (reportType.type === "work") {
+    await reply(
+      replyToken,
+      `開始建立工作抽查表 ✅
+
+請一次輸入以下資料：
+
+案名：112-115 年人工智慧匝道儀控系統維護工作
+日期：115/05/26
+地點：交控中心3樓機房
+項目1：AIRMS 伺服器定期保養檢查
+項目2：AIRMS 系統檢測作業
+
+接著再上傳兩張照片。`
+    );
+    return;
+  }
+
+  // 安衛、環保
   await reply(
     replyToken,
     `開始建立${reportType.label} ✅
@@ -3671,9 +3691,10 @@ function drawSafetyPhotoBlock(doc, options) {
   photoX + 1,
   y + 1,
   photoW - 2,
-  h - 24
+  h - 2
 );
 }
+
 
 async function saveInspectionReportRecord(payload) {
   const { userId, reportType, reportNo, info, pdfUrl } = payload;
