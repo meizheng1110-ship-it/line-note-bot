@@ -2991,8 +2991,15 @@ ${result.pdfUrl}`
 }
 
 async function getLineImageBuffer(messageId) {
-  const arrayBuffer = await blobClient.getMessageContent(messageId);
-  return Buffer.from(arrayBuffer);
+  const stream = await blobClient.getMessageContent(messageId);
+
+  const chunks = [];
+
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+
+  return Buffer.concat(chunks);
 }
 
 function parseRocDateParts(dateText) {
@@ -3221,8 +3228,14 @@ function drawPhotoBlock(doc, options) {
       valign: "center",
     });
   } catch (error) {
-    console.error("DRAW PHOTO ERROR:", error);
-    doc.text("照片載入失敗", photoX + 20, y + 120);
+  console.error("INSPECTION PHOTO ERROR:");
+  console.error(error);
+  console.error(JSON.stringify(error, null, 2));
+
+  await reply(
+    event.replyToken,
+    "產生檢查表失敗，請再試一次。"
+  );
   }
 }
 
