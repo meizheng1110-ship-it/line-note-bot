@@ -2821,38 +2821,34 @@ async function deleteFutureReminder(replyToken, userId, number) {
 
 function isInspectionStartIntent(text) {
   return [
-    "建立環境檢查表",
-    "環境檢查表",
-    "新增環境檢查表",
-    "建立環保檢查表",
-    "環保檢查表",
-    "新增環保檢查表",
     "建立安衛檢查表",
-    "安衛檢查表",
-    "新增安衛檢查表",
-    "建立安全衛生檢查表",
-    "安全衛生檢查表",
-    "新增安全衛生檢查表",
+    "建立環保檢查表",
+    "建立工作抽查表",
   ].includes(text);
 }
 
 function getInspectionTypeFromText(text) {
-  if (text.includes("環境") || text.includes("環保")) {
+
+  // 環保
+  if (text.includes("環保") || text.includes("環境")) {
     return {
       type: "environment",
       label: "環保檢查表",
-      prefix: "環",
-      title: "115-116 年中區維護技術顧問專案",
-      defaultDescription: "環境清潔檢查",
     };
   }
 
+  // 工作抽查
+  if (text.includes("工作")) {
+    return {
+      type: "work",
+      label: "工作抽查表",
+    };
+  }
+
+  // 安衛
   return {
     type: "safety",
     label: "安全衛生檢查表",
-    prefix: "安",
-    title: "安全衛生抽查照片黏貼表",
-    defaultDescription: "安全衛生抽查",
   };
 }
 
@@ -2884,36 +2880,167 @@ async function startInspectionReportFlow(replyToken, userId, text) {
 }
 
 async function handleInspectionTextStep(replyToken, userId, userText) {
+
   const draftKey = getInspectionDraftKey(userId);
   const draft = inspectionDrafts.get(draftKey);
+
   if (!draft) return false;
 
-  if (["取消", "取消報表", "取消檢查表"].includes(userText.trim())) {
+  const text = String(userText || "").trim();
+
+  // 取消
+  if (["取消", "取消報表", "取消檢查表"].includes(text)) {
+
     inspectionDrafts.delete(draftKey);
-    await reply(replyToken, "已取消建立檢查表");
+
+    await reply(
+      replyToken,
+      "已取消建立檢查表"
+    );
+
     return true;
   }
 
+  // =========================
+  // 安衛2張版型
+  // =========================
+
+  if (text === "產生安衛2張版型") {
+
+    draft.forcePhotoCount = 2;
+
+    const result = await generateInspectionPdf(
+      userId,
+      draft
+    );
+
+    inspectionDrafts.delete(draftKey);
+
+    await reply(
+      replyToken,
+      `檢查表已建立 ✅
+
+PDF：
+${result.pdfUrl}`
+    );
+
+    return true;
+  }
+
+  // =========================
+  // 安衛3張版型
+  // =========================
+
+  if (text === "我要再傳第3張") {
+
+    draft.step = "wait_third_photo";
+
+    inspectionDrafts.set(draftKey, draft);
+
+    await reply(
+      replyToken,
+      "請上傳第 3 張照片。"
+    );
+
+    return true;
+  }
+
+  // =========================
+  // 輸入資料
+  // =========================
+
   if (draft.step === "info") {
+
     const info = parseInspectionInfo(userText);
 
-    if (!info.date || !info.location || !info.item1) {
+    // 工作抽查一定要案名
+    if (
+      draft.reportType.type === "work" &&
+      !info.projectName
+    ) {
+
       await reply(
         replyToken,
-        `資料不完整，請照這個格式輸入：
+        `工作抽查表需要案名
+
+請照這個格式：
+
+案名：112-115 年人工智慧匝道儀控系統維護工作
+日期：115/05/26
+地點：交控中心3樓機房
+項目1：AIRMS 伺服器定期保養檢查
+項目2：AIRMS 系統檢測作業`
+      );
+
+      return true;
+    }
+
+    // 基本欄位
+    if (
+      !info.date ||
+      !info.location ||
+      !info.item1
+    ) {
+
+      await reply(
+        replyToken,
+        `資料不完整，請照格式輸入：
 
 日期：115/05/26
 地點：交控中心3樓機房
-項目1：環境清潔內業檢查
-項目2：環境清潔檢查`
+項目1：檢查內容
+項目2：檢查內容`
       );
+
       return true;
     }
 
     draft.info = info;
+
     draft.step = "photos";
+
     inspectionDrafts.set(draftKey, draft);
 
+    // 工作抽查
+    if (draft.reportType.type === "work") {
+
+      await reply(
+        replyToken,
+        `資料已收到 ✅
+
+案名：${info.projectName}
+
+日期：${info.date}
+地點：${info.location}
+項目1：${info.item1}
+項目2：${info.item2 || info.item1}
+
+請接著上傳第 1 張照片。`
+      );
+
+      return true;
+    }
+
+    // 安衛
+    if (draft.reportType.type === "safety") {
+
+      await reply(
+        replyToken,
+        `資料已收到 ✅
+
+日期：${info.date}
+地點：${info.location}
+項目1：${info.item1}
+項目2：${info.item2 || info.item1}
+項目3：${info.item3 || info.item2 || info.item1}
+
+請接著上傳第 1 張照片。`
+      );
+
+      return true;
+    }
+
+    // 環保
     await reply(
       replyToken,
       `資料已收到 ✅
@@ -2925,11 +3052,24 @@ async function handleInspectionTextStep(replyToken, userId, userText) {
 
 請接著上傳第 1 張照片。`
     );
+
     return true;
   }
 
-  if (draft.step === "photos") {
-    await reply(replyToken, `請直接上傳照片，目前已收到 ${draft.photos.length}/2 張。輸入「取消」可以取消。`);
+  // =========================
+  // 等待照片
+  // =========================
+
+  if (
+    draft.step === "photos" ||
+    draft.step === "wait_third_photo"
+  ) {
+
+    await reply(
+      replyToken,
+      `請直接上傳照片，目前已收到 ${draft.photos.length} 張。`
+    );
+
     return true;
   }
 
@@ -2943,6 +3083,8 @@ function parseInspectionInfo(text) {
   const item2Match = text.match(/(?:項目2|項目二|施工項目2|施工項目二)[:：]\s*([^\n]+)/);
 
   return {
+    projectName:
+  text.match(/案名[:：]\s*(.+)/)?.[1] || "",
     date: dateMatch?.[1]?.trim() || null,
     location: locationMatch?.[1]?.trim() || null,
     item1: item1Match?.[1]?.trim() || null,
@@ -2966,13 +3108,81 @@ async function handleInspectionPhotoEvent(event, userId) {
     draft.photos.push(buffer);
     inspectionDrafts.set(draftKey, draft);
 
-    if (draft.photos.length < 2) {
-      await reply(
-        event.replyToken,
-        `已收到第 ${draft.photos.length} 張照片 ✅\n請再上傳第 ${draft.photos.length + 1} 張照片。`
-      );
-      return;
-    }
+    // 安衛檢查表
+if (draft.reportType.type === "safety") {
+
+  // 第1張
+  if (draft.photos.length === 1) {
+
+    await reply(
+      event.replyToken,
+      "已收到第 1 張照片 ✅\n請上傳第 2 張照片。"
+    );
+
+    return;
+  }
+
+  // 第2張
+  if (draft.photos.length === 2) {
+
+    draft.step = "wait_safety_choice";
+
+    inspectionDrafts.set(draftKey, draft);
+
+    await replySafetyPhotoChoice(event.replyToken);
+
+    return;
+  }
+
+  // 第3張
+  if (draft.photos.length === 3) {
+
+    draft.forcePhotoCount = 3;
+
+    const result = await generateInspectionPdf(
+      userId,
+      draft
+    );
+
+    inspectionDrafts.delete(draftKey);
+
+    await reply(
+      event.replyToken,
+      `檢查表已建立 ✅
+
+PDF：
+${result.pdfUrl}`
+    );
+
+    return;
+  }
+}
+
+// 環保 / 工作抽查 固定2張
+if (draft.photos.length < 2) {
+
+  await reply(
+    event.replyToken,
+    `已收到第 ${draft.photos.length} 張照片`
+  );
+
+  return;
+}
+
+const result = await generateInspectionPdf(
+  userId,
+  draft
+);
+
+inspectionDrafts.delete(draftKey);
+
+await reply(
+  event.replyToken,
+  `檢查表已建立 ✅
+
+PDF：
+${result.pdfUrl}`
+);
 
     const result = await generateInspectionPdf(userId, draft);
     inspectionDrafts.delete(draftKey);
@@ -3076,14 +3286,14 @@ function findChineseFontPath() {
   // PDFKit 內建字型不支援中文，Render 上如果沒有中文字型就會變亂碼。
   // 建議在專案根目錄新增：fonts/NotoSansTC-Regular.otf
   const candidates = [
-    path.join(__dirname, "fonts", "NotoSansTC-Regular.otf"),
-    path.join(__dirname, "fonts", "NotoSansTC-Medium.otf"),
+    path.join(__dirname, "fonts", "NotoSansTC-Regular.ttf"),
+    path.join(__dirname, "fonts", "NotoSansTC-Medium.ttf"),
     path.join(__dirname, "fonts", "NotoSansCJKtc-Regular.otf"),
     path.join(__dirname, "fonts", "NotoSansCJK-Regular.ttc"),
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJKtc-Regular.otf",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/truetype/noto/NotoSansTC-Regular.otf",
+    "/usr/share/fonts/truetype/noto/NotoSansTC-Regular.ttf",
     "/System/Library/Fonts/PingFang.ttc",
     "C:/Windows/Fonts/msjh.ttc",
     "C:/Windows/Fonts/msjhbd.ttc",
@@ -3178,14 +3388,57 @@ function drawImageCover(doc, imageBuffer, x, y, w, h) {
 }
 
 function drawInspectionPdfPage(doc, payload) {
-  const { reportType } = payload;
 
-  if (reportType.type === "environment") {
-    drawEnvironmentInspectionPdfPage(doc, payload);
-    return;
+  const type = payload.reportType.type;
+
+  // 環保
+  if (type === "environment") {
+
+    return drawEnvironmentInspectionPdfPage(
+      doc,
+      payload
+    );
   }
 
-  drawSafetyInspectionPdfPage(doc, payload);
+  // 工作抽查
+  if (type === "work") {
+
+    return drawWorkInspectionPdfPage(
+      doc,
+      payload
+    );
+  }
+
+  // 安衛
+  if (type === "safety") {
+
+    // 3張版型
+    if (
+      payload.forcePhotoCount === 3 ||
+      payload.photos.length >= 3
+    ) {
+
+      return drawSafetyInspectionPdfPage3(
+        doc,
+        payload
+      );
+    }
+
+    // 2張版型
+    return drawSafetyInspectionPdfPage2(
+      doc,
+      payload
+    );
+  }
+}
+function drawSafetyInspectionPdfPage3(
+  doc,
+  payload
+) {
+
+  // 直接複製2張版型
+
+  // 把高度縮小成3格即可
 }
 
 function drawEnvironmentInspectionPdfPage(doc, payload) {
@@ -3220,6 +3473,37 @@ function drawEnvironmentInspectionPdfPage(doc, payload) {
     item: info.item2 || info.item1,
     photo: photo2,
   });
+}
+function drawWorkInspectionPdfPage(
+  doc,
+  payload
+) {
+
+  const {
+    info,
+    photo1,
+    photo2,
+  } = payload;
+
+  doc.fontSize(16).text(
+    info.projectName,
+    0,
+    30,
+    {
+      align: "center",
+    }
+  );
+
+  doc.fontSize(16).text(
+    "工作抽查紀錄相片",
+    0,
+    60,
+    {
+      align: "center",
+    }
+  );
+
+  // 下面直接複製你環保版型即可
 }
 
 function drawEnvironmentPhotoBlock(doc, options) {
@@ -3383,6 +3667,37 @@ async function saveInspectionReportRecord(payload) {
 }
 
 
+async function replySafetyPhotoChoice(replyToken) {
+  await client.replyMessage({
+    replyToken,
+    messages: [
+      {
+        type: "text",
+        text: "已收到第 2 張照片 ✅\n\n請選擇：",
+        quickReply: {
+          items: [
+            {
+              type: "action",
+              action: {
+                type: "message",
+                label: "產生2張版型",
+                text: "產生安衛2張版型",
+              },
+            },
+            {
+              type: "action",
+              action: {
+                type: "message",
+                label: "再傳第3張",
+                text: "我要再傳第3張",
+              },
+            },
+          ],
+        },
+      },
+    ],
+  });
+}
 async function reply(replyToken, text) {
   await client.replyMessage({
     replyToken,
