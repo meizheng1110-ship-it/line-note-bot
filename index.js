@@ -3409,70 +3409,57 @@ function drawInspectionPdfPage(doc, payload) {
 function drawSafetyInspectionPdfPage3(doc, payload) {
   const { reportNo, info, photo1, photo2, photo3 } = payload;
   const pageWidth = doc.page.width;
-  const margin = 42;
+  const margin = 58;
   const contentWidth = pageWidth - margin * 2;
 
-  doc.fontSize(14).text("交通部高速公路局中區養護工程分局", margin, 38, {
+  doc.fontSize(14).text("交通部高速公路局中區養護工程分局", margin, 28, {
     align: "center",
     width: contentWidth,
   });
 
-  doc.fontSize(16).text("安全衛生抽查照片黏貼表", margin, 62, {
+  doc.fontSize(16).text("安全衛生抽查照片黏貼表", margin, 52, {
     align: "center",
     width: contentWidth,
   });
 
-  doc.fontSize(9).text(`抽查編號：${reportNo}`, margin, 92, {
-    width: 250,
-  });
-
-  doc.fontSize(9).text("第 1 頁 共 1 頁", pageWidth - margin - 110, 92, {
+  doc.fontSize(9).text(`抽查編號：${reportNo}`, margin, 82);
+  doc.fontSize(9).text("第 1 頁 共 1 頁", pageWidth - margin - 110, 82, {
     align: "right",
     width: 110,
   });
 
-  drawSafetyPhotoBlock(doc, {
+  drawEnvironmentPhotoBlock(doc, {
     x: margin,
-    y: 110,
+    y: 105,
     w: contentWidth,
-    h: 185,
-    description: "安全衛生抽查",
+    h: 225,
     date: formatRocDate(info.date),
-    item: info.item1,
     location: info.location,
+    item: info.item1,
     photo: photo1,
   });
 
-  drawSafetyPhotoBlock(doc, {
+  drawEnvironmentPhotoBlock(doc, {
     x: margin,
-    y: 315,
+    y: 345,
     w: contentWidth,
-    h: 185,
-    description: "安全衛生抽查",
+    h: 225,
     date: formatRocDate(info.date),
-    item: info.item2 || info.item1,
     location: info.location,
+    item: info.item2 || info.item1,
     photo: photo2,
   });
 
-  drawSafetyPhotoBlock(doc, {
+  drawEnvironmentPhotoBlock(doc, {
     x: margin,
-    y: 520,
+    y: 585,
     w: contentWidth,
-    h: 185,
-    description: "安全衛生抽查",
+    h: 225,
     date: formatRocDate(info.date),
-    item: info.item3 || info.item2 || info.item1,
     location: info.location,
+    item: info.item3 || info.item2 || info.item1,
     photo: photo3,
   });
-
-  doc.save();
-  doc.rotate(90, { origin: [pageWidth - 24, 120] });
-  doc.fontSize(8).text("註：本表乙份由抽查單位存查。", pageWidth - 24, 120, {
-    width: 260,
-  });
-  doc.restore();
 }
 
 function drawEnvironmentInspectionPdfPage(doc, payload) {
@@ -3588,58 +3575,46 @@ function drawEnvironmentPhotoBlock(doc, options) {
 function drawSafetyInspectionPdfPage2(doc, payload) {
   const { reportNo, info, photo1, photo2 } = payload;
   const pageWidth = doc.page.width;
-  const margin = 42;
+  const margin = 58;
   const contentWidth = pageWidth - margin * 2;
 
-  doc.fontSize(14).text("交通部高速公路局中區養護工程分局", margin, 38, {
+  doc.fontSize(14).text("交通部高速公路局中區養護工程分局", margin, 28, {
     align: "center",
     width: contentWidth,
   });
 
-  doc.fontSize(16).text("安全衛生抽查照片黏貼表", margin, 62, {
+  doc.fontSize(16).text("安全衛生抽查照片黏貼表", margin, 52, {
     align: "center",
     width: contentWidth,
   });
 
-  doc.fontSize(9).text(`抽查編號：${reportNo}`, margin, 92, {
-    width: 250,
-  });
-
-  doc.fontSize(9).text("第 1 頁 共 1 頁", pageWidth - margin - 110, 92, {
+  doc.fontSize(9).text(`抽查編號：${reportNo}`, margin, 82);
+  doc.fontSize(9).text("第 1 頁 共 1 頁", pageWidth - margin - 110, 82, {
     align: "right",
     width: 110,
   });
 
-  drawSafetyPhotoBlock(doc, {
+  drawEnvironmentPhotoBlock(doc, {
     x: margin,
-    y: 110,
+    y: 105,
     w: contentWidth,
-    h: 185,
-    description: "安全衛生抽查",
+    h: 340,
     date: formatRocDate(info.date),
-    item: info.item1,
     location: info.location,
+    item: info.item1,
     photo: photo1,
   });
 
-  drawSafetyPhotoBlock(doc, {
+  drawEnvironmentPhotoBlock(doc, {
     x: margin,
-    y: 440,
+    y: 465,
     w: contentWidth,
-    h: 330,
-    description: "安全衛生抽查",
+    h: 340,
     date: formatRocDate(info.date),
-    item: info.item2 || info.item1,
     location: info.location,
+    item: info.item2 || info.item1,
     photo: photo2,
   });
-
-  doc.save();
-  doc.rotate(90, { origin: [pageWidth - 24, 120] });
-  doc.fontSize(8).text("註：本表乙份由抽查單位存查。", pageWidth - 24, 120, {
-    width: 260,
-  });
-  doc.restore();
 }
 
 function drawSafetyPhotoBlock(doc, options) {
