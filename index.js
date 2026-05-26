@@ -3673,6 +3673,7 @@ function drawSafetyPhotoBlock(doc, options) {
   photoW - 2,
   h - 24
 );
+}
 
 async function saveInspectionReportRecord(payload) {
   const { userId, reportType, reportNo, info, pdfUrl } = payload;
