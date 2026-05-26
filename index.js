@@ -10,7 +10,7 @@ import { fileURLToPath } from "url";
 
 dotenv.config();
 
-console.log("NEW VERSION LOADED - PDF TWO LAYOUTS");
+console.log("NEW VERSION LOADED - SAFETY AND ENVIRONMENT PDF LAYOUTS");
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -2824,6 +2824,9 @@ function isInspectionStartIntent(text) {
     "建立環境檢查表",
     "環境檢查表",
     "新增環境檢查表",
+    "建立環保檢查表",
+    "環保檢查表",
+    "新增環保檢查表",
     "建立安衛檢查表",
     "安衛檢查表",
     "新增安衛檢查表",
@@ -2834,13 +2837,13 @@ function isInspectionStartIntent(text) {
 }
 
 function getInspectionTypeFromText(text) {
-  if (text.includes("環境")) {
+  if (text.includes("環境") || text.includes("環保")) {
     return {
       type: "environment",
-      label: "環境檢查表",
+      label: "環保檢查表",
       prefix: "環",
-      title: "環境保護措施檢查照片表",
-      defaultDescription: "環境檢查",
+      title: "115-116 年中區維護技術顧問專案",
+      defaultDescription: "環境清潔檢查",
     };
   }
 
@@ -3073,10 +3076,10 @@ function findChineseFontPath() {
   // PDFKit 內建字型不支援中文，Render 上如果沒有中文字型就會變亂碼。
   // 建議在專案根目錄新增：fonts/NotoSansTC-Regular.otf
   const candidates = [
-    path.join(__dirname, "fonts", "NotoSansTC-Regular.otf"),
-    path.join(__dirname, "fonts", "NotoSansTC-Medium.otf"),
-    path.join(__dirname, "fonts", "NotoSansCJKtc-Regular.otf"),
-    path.join(__dirname, "fonts", "NotoSansCJK-Regular.ttc"),
+    path.join(__dirname, "font", "NotoSansTC-Regular.otf"),
+    path.join(__dirname, "font", "NotoSansTC-Medium.otf"),
+    path.join(__dirname, "font", "NotoSansCJKtc-Regular.otf"),
+    path.join(__dirname, "font", "NotoSansCJK-Regular.ttc"),
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJKtc-Regular.otf",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
@@ -3163,7 +3166,7 @@ function drawInspectionPdfPage(doc, payload) {
 }
 
 function drawEnvironmentInspectionPdfPage(doc, payload) {
-  const { reportNo, info, photo1, photo2 } = payload;
+  const { info, photo1, photo2 } = payload;
   const pageWidth = doc.page.width;
   const margin = 58;
   const contentWidth = pageWidth - margin * 2;
@@ -3173,16 +3176,11 @@ function drawEnvironmentInspectionPdfPage(doc, payload) {
     width: contentWidth,
   });
 
-  doc.fontSize(9).text(`檢查編號：${reportNo}`, margin, 54, {
-    align: "left",
-    width: contentWidth,
-  });
-
   drawEnvironmentPhotoBlock(doc, {
     x: margin,
-    y: 70,
+    y: 58,
     w: contentWidth,
-    h: 360,
+    h: 374,
     date: formatRocDate(info.date),
     location: info.location,
     item: info.item1,
@@ -3191,9 +3189,9 @@ function drawEnvironmentInspectionPdfPage(doc, payload) {
 
   drawEnvironmentPhotoBlock(doc, {
     x: margin,
-    y: 445,
+    y: 446,
     w: contentWidth,
-    h: 360,
+    h: 374,
     date: formatRocDate(info.date),
     location: info.location,
     item: info.item2 || info.item1,
@@ -3203,7 +3201,7 @@ function drawEnvironmentInspectionPdfPage(doc, payload) {
 
 function drawEnvironmentPhotoBlock(doc, options) {
   const { x, y, w, h, date, location, item, photo } = options;
-  const captionH = 34;
+  const captionH = 38;
   const photoH = h - captionH;
 
   doc.rect(x, y, w, h).stroke();
@@ -3233,7 +3231,7 @@ function drawEnvironmentPhotoBlock(doc, options) {
     width: rightW - 12,
   });
 
-  doc.text(`項目：${item}`, x + 6, y + photoH + 18, {
+  doc.text(`項目：${item}`, x + 6, y + photoH + 20, {
     width: w - 12,
   });
 }
@@ -3307,8 +3305,7 @@ function drawSafetyPhotoBlock(doc, options) {
   doc.fontSize(9);
   let textY = y + 10;
 
-  doc.text(`說明：
-${description}`, x + 8, textY, {
+  doc.text(`說明：\n${description}`, x + 8, textY, {
     width: leftW - 16,
     lineGap: 3,
   });
@@ -3319,15 +3316,13 @@ ${description}`, x + 8, textY, {
   });
 
   textY += 54;
-  doc.text(`施工項目：
-${item}`, x + 8, textY, {
+  doc.text(`施工項目：\n${item}`, x + 8, textY, {
     width: leftW - 16,
     lineGap: 3,
   });
 
   textY += 88;
-  doc.text(`抽查地點：
-${location}`, x + 8, textY, {
+  doc.text(`抽查地點：\n${location}`, x + 8, textY, {
     width: leftW - 16,
     lineGap: 3,
   });
