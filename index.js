@@ -3076,14 +3076,14 @@ function findChineseFontPath() {
   // PDFKit 內建字型不支援中文，Render 上如果沒有中文字型就會變亂碼。
   // 建議在專案根目錄新增：fonts/NotoSansTC-Regular.otf
   const candidates = [
-    path.join(__dirname, "font", "NotoSansTC-Regular.otf"),
-    path.join(__dirname, "font", "NotoSansTC-Medium.otf"),
+    path.join(__dirname, "font", "NotoSansTC-Regular.ttf"),
+    path.join(__dirname, "font", "NotoSansTC-Medium.ttf"),
     path.join(__dirname, "font", "NotoSansCJKtc-Regular.otf"),
     path.join(__dirname, "font", "NotoSansCJK-Regular.ttc"),
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJKtc-Regular.otf",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/truetype/noto/NotoSansTC-Regular.otf",
+    "/usr/share/fonts/truetype/noto/NotoSansTC-Regular.ttf",
     "/System/Library/Fonts/PingFang.ttc",
     "C:/Windows/Fonts/msjh.ttc",
     "C:/Windows/Fonts/msjhbd.ttc",
@@ -3110,7 +3110,7 @@ async function generateInspectionPdf(userId, draft) {
 
   const fontPath = findChineseFontPath();
   if (!fontPath) {
-    console.error("CHINESE FONT NOT FOUND. Please add fonts/NotoSansTC-Regular.otf to the project.");
+    console.error("CHINESE FONT NOT FOUND. Please add fonts/NotoSansTC-Regular.ttf to the project.");
   } else {
     doc.registerFont("ChineseFont", fontPath);
     doc.font("ChineseFont");
