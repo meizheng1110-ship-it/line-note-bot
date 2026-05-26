@@ -10,7 +10,7 @@ import { fileURLToPath } from "url";
 
 dotenv.config();
 
-console.log("NEW VERSION LOADED - SAFETY AND ENVIRONMENT PDF LAYOUTS");
+console.log("NEW VERSION LOADED - FIXED PDF TABLES");
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -3076,14 +3076,14 @@ function findChineseFontPath() {
   // PDFKit 內建字型不支援中文，Render 上如果沒有中文字型就會變亂碼。
   // 建議在專案根目錄新增：fonts/NotoSansTC-Regular.otf
   const candidates = [
-    path.join(__dirname, "font", "NotoSansTC-Regular.ttf"),
-    path.join(__dirname, "font", "NotoSansTC-Medium.ttf"),
-    path.join(__dirname, "font", "NotoSansCJKtc-Regular.otf"),
-    path.join(__dirname, "font", "NotoSansCJK-Regular.ttc"),
+    path.join(__dirname, "fonts", "NotoSansTC-Regular.otf"),
+    path.join(__dirname, "fonts", "NotoSansTC-Medium.otf"),
+    path.join(__dirname, "fonts", "NotoSansCJKtc-Regular.otf"),
+    path.join(__dirname, "fonts", "NotoSansCJK-Regular.ttc"),
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJKtc-Regular.otf",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/truetype/noto/NotoSansTC-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansTC-Regular.otf",
     "/System/Library/Fonts/PingFang.ttc",
     "C:/Windows/Fonts/msjh.ttc",
     "C:/Windows/Fonts/msjhbd.ttc",
@@ -3110,7 +3110,7 @@ async function generateInspectionPdf(userId, draft) {
 
   const fontPath = findChineseFontPath();
   if (!fontPath) {
-    console.error("CHINESE FONT NOT FOUND. Please add fonts/NotoSansTC-Regular.ttf to the project.");
+    console.error("CHINESE FONT NOT FOUND. Please add fonts/NotoSansTC-Regular.otf to the project.");
   } else {
     doc.registerFont("ChineseFont", fontPath);
     doc.font("ChineseFont");
@@ -3154,6 +3154,29 @@ async function generateInspectionPdf(userId, draft) {
   };
 }
 
+
+function drawImageCover(doc, imageBuffer, x, y, w, h) {
+  try {
+    const image = doc.openImage(imageBuffer);
+    const scale = Math.max(w / image.width, h / image.height);
+    const drawW = image.width * scale;
+    const drawH = image.height * scale;
+    const drawX = x + (w - drawW) / 2;
+    const drawY = y + (h - drawH) / 2;
+
+    doc.save();
+    doc.rect(x, y, w, h).clip();
+    doc.image(imageBuffer, drawX, drawY, {
+      width: drawW,
+      height: drawH,
+    });
+    doc.restore();
+  } catch (error) {
+    console.error("DRAW PHOTO ERROR:", error);
+    doc.fontSize(12).text("照片載入失敗", x + 20, y + 120);
+  }
+}
+
 function drawInspectionPdfPage(doc, payload) {
   const { reportType } = payload;
 
@@ -3180,7 +3203,7 @@ function drawEnvironmentInspectionPdfPage(doc, payload) {
     x: margin,
     y: 58,
     w: contentWidth,
-    h: 300,
+    h: 360,
     date: formatRocDate(info.date),
     location: info.location,
     item: info.item1,
@@ -3189,9 +3212,9 @@ function drawEnvironmentInspectionPdfPage(doc, payload) {
 
   drawEnvironmentPhotoBlock(doc, {
     x: margin,
-    y: 380,
+    y: 438,
     w: contentWidth,
-    h: 300,
+    h: 360,
     date: formatRocDate(info.date),
     location: info.location,
     item: info.item2 || info.item1,
@@ -3201,38 +3224,39 @@ function drawEnvironmentInspectionPdfPage(doc, payload) {
 
 function drawEnvironmentPhotoBlock(doc, options) {
   const { x, y, w, h, date, location, item, photo } = options;
-  const captionH = 28;
+
+  // 固定表格高度，不讓照片比例影響表格與文字位置
+  const captionH = 38;
   const photoH = h - captionH;
+  const captionY = y + photoH;
 
   doc.rect(x, y, w, h).stroke();
 
-  try {
-    doc.image(photo, x + 1, y + 1, {
-      fit: [w - 10, photoH - 10],
-      align: "center",
-      valign: "center",
-    });
-  } catch (error) {
-    console.error("DRAW PHOTO ERROR:", error);
-    doc.fontSize(12).text("照片載入失敗", x + 20, y + 120);
-  }
+  // 照片固定塞入同一個框，過寬或過高就置中裁切，不會把文字擠到下一頁
+  drawImageCover(doc, photo, x + 1, y + 1, w - 2, photoH - 2);
 
-  doc.moveTo(x, y + photoH).lineTo(x + w, y + photoH).stroke();
+  doc.moveTo(x, captionY).lineTo(x + w, captionY).stroke();
 
   const leftW = Math.floor(w * 0.46);
   const rightW = w - leftW;
 
   doc.fontSize(9);
-  doc.text(`日期：${date}`, x + 6, y + photoH + 5, {
+  doc.text(`日期：${date}`, x + 6, captionY + 5, {
     width: leftW - 12,
+    height: 12,
+    ellipsis: true,
   });
 
-  doc.text(`地點：${location}`, x + leftW + 6, y + photoH + 5, {
+  doc.text(`地點：${location}`, x + leftW + 6, captionY + 5, {
     width: rightW - 12,
+    height: 12,
+    ellipsis: true,
   });
 
-  doc.text(`項目：${item}`, x + 6, y + photoH + 20, {
+  doc.text(`項目：${item}`, x + 6, captionY + 20, {
     width: w - 12,
+    height: 12,
+    ellipsis: true,
   });
 }
 
@@ -3307,36 +3331,36 @@ function drawSafetyPhotoBlock(doc, options) {
 
   doc.text(`說明：\n${description}`, x + 8, textY, {
     width: leftW - 16,
+    height: 54,
     lineGap: 3,
+    ellipsis: true,
   });
 
   textY += 74;
   doc.text(`日期：${date}`, x + 8, textY, {
     width: leftW - 16,
+    height: 16,
+    ellipsis: true,
   });
 
   textY += 54;
   doc.text(`施工項目：\n${item}`, x + 8, textY, {
     width: leftW - 16,
+    height: 64,
     lineGap: 3,
+    ellipsis: true,
   });
 
   textY += 88;
   doc.text(`抽查地點：\n${location}`, x + 8, textY, {
     width: leftW - 16,
+    height: 68,
     lineGap: 3,
+    ellipsis: true,
   });
 
-  try {
-    doc.image(photo, photoX + 1, y + 1, {
-      fit: [photoW - 2, h - 2],
-      align: "center",
-      valign: "center",
-    });
-  } catch (error) {
-    console.error("DRAW PHOTO ERROR:", error);
-    doc.fontSize(12).text("照片載入失敗", photoX + 20, y + 120);
-  }
+  // 固定照片欄位，置中裁切，不讓照片比例改變表格大小
+  drawImageCover(doc, photo, photoX + 1, y + 1, photoW - 2, h - 2);
 }
 
 async function saveInspectionReportRecord(payload) {
