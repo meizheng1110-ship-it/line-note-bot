@@ -3323,7 +3323,7 @@ async function generateInspectionPdf(userId, draft) {
 function drawImageCover(doc, imageBuffer, x, y, w, h) {
   try {
     const image = doc.openImage(imageBuffer);
-    const scale = Math.max(w / image.width, h / image.height);
+    const scale = Math.min(w / image.width, h / image.height);
     const drawW = image.width * scale;
     const drawH = image.height * scale;
     const drawX = x + (w - drawW) / 2;
@@ -3415,7 +3415,7 @@ function drawSafetyInspectionPdfPage3(doc, payload) {
     x: margin,
     y: 110,
     w: contentWidth,
-    h: 215,
+    h: 185,
     description: "安全衛生抽查",
     date: formatRocDate(info.date),
     item: info.item1,
@@ -3425,9 +3425,9 @@ function drawSafetyInspectionPdfPage3(doc, payload) {
 
   drawSafetyPhotoBlock(doc, {
     x: margin,
-    y: 325,
+    y: 315,
     w: contentWidth,
-    h: 215,
+    h: 185,
     description: "安全衛生抽查",
     date: formatRocDate(info.date),
     item: info.item2 || info.item1,
@@ -3437,9 +3437,9 @@ function drawSafetyInspectionPdfPage3(doc, payload) {
 
   drawSafetyPhotoBlock(doc, {
     x: margin,
-    y: 540,
+    y: 520,
     w: contentWidth,
-    h: 215,
+    h: 185,
     description: "安全衛生抽查",
     date: formatRocDate(info.date),
     item: info.item3 || info.item2 || info.item1,
@@ -3538,7 +3538,7 @@ function drawEnvironmentPhotoBlock(doc, options) {
   doc.rect(x, y, w, h).stroke();
 
   // 照片固定塞入同一個框，過寬或過高就置中裁切，不會把文字擠到下一頁
-  drawImageCover(doc, photo, x + 1, y + 1, w - 2, photoH - 2);
+  drawImageCover(doc, photo, x + 1, y + 1, w - 2, photoH - 24);
 
   doc.moveTo(x, captionY).lineTo(x + w, captionY).stroke();
 
@@ -3594,7 +3594,7 @@ function drawSafetyInspectionPdfPage2(doc, payload) {
     x: margin,
     y: 110,
     w: contentWidth,
-    h: 330,
+    h: 185,
     description: "安全衛生抽查",
     date: formatRocDate(info.date),
     item: info.item1,
@@ -3636,37 +3636,43 @@ function drawSafetyPhotoBlock(doc, options) {
 
   doc.text(`說明：\n${description}`, x + 8, textY, {
     width: leftW - 16,
-    height: 54,
+    height: 40,
     lineGap: 3,
     ellipsis: true,
   });
 
-  textY += 74;
+  textY += 58;
   doc.text(`日期：${date}`, x + 8, textY, {
     width: leftW - 16,
     height: 16,
     ellipsis: true,
   });
 
-  textY += 54;
+  textY += 40;
   doc.text(`施工項目：\n${item}`, x + 8, textY, {
     width: leftW - 16,
-    height: 64,
+    height: 36,
     lineGap: 3,
     ellipsis: true,
   });
 
-  textY += 88;
+  textY += 46;
   doc.text(`抽查地點：\n${location}`, x + 8, textY, {
     width: leftW - 16,
-    height: 68,
+    height: 42,
     lineGap: 3,
     ellipsis: true,
   });
 
   // 固定照片欄位，置中裁切，不讓照片比例改變表格大小
-  drawImageCover(doc, photo, photoX + 1, y + 1, photoW - 2, h - 2);
-}
+  drawImageCover(
+  doc,
+  photo,
+  photoX + 1,
+  y + 1,
+  photoW - 2,
+  h - 24
+);
 
 async function saveInspectionReportRecord(payload) {
   const { userId, reportType, reportNo, info, pdfUrl } = payload;
