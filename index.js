@@ -10,7 +10,7 @@ import { fileURLToPath } from "url";
 
 dotenv.config();
 
-console.log("NEW VERSION LOADED");
+console.log("NEW VERSION LOADED - PDF TWO LAYOUTS");
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -3070,12 +3070,20 @@ function getPublicBaseUrl() {
 }
 
 function findChineseFontPath() {
+  // PDFKit 內建字型不支援中文，Render 上如果沒有中文字型就會變亂碼。
+  // 建議在專案根目錄新增：fonts/NotoSansTC-Regular.otf
   const candidates = [
+    path.join(__dirname, "fonts", "NotoSansTC-Regular.otf"),
+    path.join(__dirname, "fonts", "NotoSansTC-Medium.otf"),
+    path.join(__dirname, "fonts", "NotoSansCJKtc-Regular.otf"),
+    path.join(__dirname, "fonts", "NotoSansCJK-Regular.ttc"),
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJKtc-Regular.otf",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansTC-Regular.otf",
     "/System/Library/Fonts/PingFang.ttc",
     "C:/Windows/Fonts/msjh.ttc",
+    "C:/Windows/Fonts/msjhbd.ttc",
   ];
 
   return candidates.find((item) => fs.existsSync(item)) || null;
@@ -3098,8 +3106,11 @@ async function generateInspectionPdf(userId, draft) {
   });
 
   const fontPath = findChineseFontPath();
-  if (fontPath) {
-    doc.font(fontPath);
+  if (!fontPath) {
+    console.error("CHINESE FONT NOT FOUND. Please add fonts/NotoSansTC-Regular.otf to the project.");
+  } else {
+    doc.registerFont("ChineseFont", fontPath);
+    doc.font("ChineseFont");
   }
 
   const stream = fs.createWriteStream(pdfPath);
@@ -3141,95 +3152,195 @@ async function generateInspectionPdf(userId, draft) {
 }
 
 function drawInspectionPdfPage(doc, payload) {
-  const { reportType, reportNo, info, photo1, photo2 } = payload;
+  const { reportType } = payload;
+
+  if (reportType.type === "environment") {
+    drawEnvironmentInspectionPdfPage(doc, payload);
+    return;
+  }
+
+  drawSafetyInspectionPdfPage(doc, payload);
+}
+
+function drawEnvironmentInspectionPdfPage(doc, payload) {
+  const { reportNo, info, photo1, photo2 } = payload;
   const pageWidth = doc.page.width;
-  const margin = 36;
+  const margin = 58;
   const contentWidth = pageWidth - margin * 2;
 
-  doc.fontSize(18).text("交通部高速公路局中區養護工程分局", margin, 32, {
+  doc.fontSize(14).text("115-116 年中區維護技術顧問專案", margin, 30, {
     align: "center",
     width: contentWidth,
   });
 
-  doc.fontSize(20).text(reportType.title, margin, 62, {
-    align: "center",
+  doc.fontSize(9).text(`檢查編號：${reportNo}`, margin, 54, {
+    align: "left",
     width: contentWidth,
   });
 
-  doc.fontSize(11).text(`編號：${reportNo}`, margin, 100);
-  doc.text("第 1 頁 共 1 頁", pageWidth - 150, 100);
-
-  drawPhotoBlock(doc, {
+  drawEnvironmentPhotoBlock(doc, {
     x: margin,
-    y: 125,
+    y: 70,
     w: contentWidth,
-    h: 300,
-    reportType,
-    reportNo,
+    h: 360,
     date: formatRocDate(info.date),
     location: info.location,
     item: info.item1,
     photo: photo1,
   });
 
-  drawPhotoBlock(doc, {
+  drawEnvironmentPhotoBlock(doc, {
     x: margin,
-    y: 435,
+    y: 445,
     w: contentWidth,
-    h: 300,
-    reportType,
-    reportNo,
+    h: 360,
     date: formatRocDate(info.date),
     location: info.location,
     item: info.item2 || info.item1,
     photo: photo2,
   });
-
-  doc.fontSize(9).text("註：本表乙份由抽查單位存查。", margin, 750, {
-    align: "right",
-    width: contentWidth,
-  });
 }
 
-function drawPhotoBlock(doc, options) {
-  const { x, y, w, h, reportType, date, location, item, photo } = options;
-  const leftW = 125;
-  const gap = 8;
-  const photoX = x + leftW + gap;
-  const photoW = w - leftW - gap;
+function drawEnvironmentPhotoBlock(doc, options) {
+  const { x, y, w, h, date, location, item, photo } = options;
+  const captionH = 34;
+  const photoH = h - captionH;
 
   doc.rect(x, y, w, h).stroke();
-  doc.moveTo(x + leftW, y).lineTo(x + leftW, y + h).stroke();
-
-  doc.fontSize(11);
-  doc.text(`說明：\n${reportType.defaultDescription}`, x + 8, y + 12, {
-    width: leftW - 16,
-    lineGap: 5,
-  });
-
-  doc.text(`日期：${date}`, x + 8, y + 92, {
-    width: leftW - 16,
-  });
-
-  doc.text(`施工項目：\n${item}`, x + 8, y + 135, {
-    width: leftW - 16,
-    lineGap: 5,
-  });
-
-  doc.text(`地點：\n${location}`, x + 8, y + 220, {
-    width: leftW - 16,
-    lineGap: 5,
-  });
 
   try {
-    doc.image(photo, photoX + 6, y + 6, {
-      fit: [photoW - 12, h - 12],
+    doc.image(photo, x + 1, y + 1, {
+      fit: [w - 2, photoH - 2],
       align: "center",
       valign: "center",
     });
   } catch (error) {
     console.error("DRAW PHOTO ERROR:", error);
-    doc.text("照片載入失敗", photoX + 20, y + 120);
+    doc.fontSize(12).text("照片載入失敗", x + 20, y + 120);
+  }
+
+  doc.moveTo(x, y + photoH).lineTo(x + w, y + photoH).stroke();
+
+  const leftW = Math.floor(w * 0.46);
+  const rightW = w - leftW;
+
+  doc.fontSize(9);
+  doc.text(`日期：${date}`, x + 6, y + photoH + 5, {
+    width: leftW - 12,
+  });
+
+  doc.text(`地點：${location}`, x + leftW + 6, y + photoH + 5, {
+    width: rightW - 12,
+  });
+
+  doc.text(`項目：${item}`, x + 6, y + photoH + 18, {
+    width: w - 12,
+  });
+}
+
+function drawSafetyInspectionPdfPage(doc, payload) {
+  const { reportNo, info, photo1, photo2 } = payload;
+  const pageWidth = doc.page.width;
+  const margin = 42;
+  const contentWidth = pageWidth - margin * 2;
+
+  doc.fontSize(14).text("交通部高速公路局中區養護工程分局", margin, 38, {
+    align: "center",
+    width: contentWidth,
+  });
+
+  doc.fontSize(16).text("安全衛生抽查照片黏貼表", margin, 62, {
+    align: "center",
+    width: contentWidth,
+  });
+
+  doc.fontSize(9).text(`抽查編號：${reportNo}`, margin, 92, {
+    width: 250,
+  });
+
+  doc.fontSize(9).text("第 1 頁 共 1 頁", pageWidth - margin - 110, 92, {
+    align: "right",
+    width: 110,
+  });
+
+  drawSafetyPhotoBlock(doc, {
+    x: margin,
+    y: 110,
+    w: contentWidth,
+    h: 330,
+    description: "安全衛生抽查",
+    date: formatRocDate(info.date),
+    item: info.item1,
+    location: info.location,
+    photo: photo1,
+  });
+
+  drawSafetyPhotoBlock(doc, {
+    x: margin,
+    y: 440,
+    w: contentWidth,
+    h: 330,
+    description: "安全衛生抽查",
+    date: formatRocDate(info.date),
+    item: info.item2 || info.item1,
+    location: info.location,
+    photo: photo2,
+  });
+
+  doc.save();
+  doc.rotate(90, { origin: [pageWidth - 24, 120] });
+  doc.fontSize(8).text("註：本表乙份由抽查單位存查。", pageWidth - 24, 120, {
+    width: 260,
+  });
+  doc.restore();
+}
+
+function drawSafetyPhotoBlock(doc, options) {
+  const { x, y, w, h, description, date, item, location, photo } = options;
+  const leftW = 142;
+  const photoX = x + leftW;
+  const photoW = w - leftW;
+
+  doc.rect(x, y, w, h).stroke();
+  doc.moveTo(photoX, y).lineTo(photoX, y + h).stroke();
+
+  doc.fontSize(9);
+  let textY = y + 10;
+
+  doc.text(`說明：
+${description}`, x + 8, textY, {
+    width: leftW - 16,
+    lineGap: 3,
+  });
+
+  textY += 74;
+  doc.text(`日期：${date}`, x + 8, textY, {
+    width: leftW - 16,
+  });
+
+  textY += 54;
+  doc.text(`施工項目：
+${item}`, x + 8, textY, {
+    width: leftW - 16,
+    lineGap: 3,
+  });
+
+  textY += 88;
+  doc.text(`抽查地點：
+${location}`, x + 8, textY, {
+    width: leftW - 16,
+    lineGap: 3,
+  });
+
+  try {
+    doc.image(photo, photoX + 1, y + 1, {
+      fit: [photoW - 2, h - 2],
+      align: "center",
+      valign: "center",
+    });
+  } catch (error) {
+    console.error("DRAW PHOTO ERROR:", error);
+    doc.fontSize(12).text("照片載入失敗", photoX + 20, y + 120);
   }
 }
 
