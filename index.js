@@ -2986,13 +2986,13 @@ ${result.pdfUrl}`
     console.error("INSPECTION PHOTO ERROR FULL:", error);
     console.error("INSPECTION PHOTO ERROR STATUS:", error?.status || error?.response?.status);
     console.error("INSPECTION PHOTO ERROR BODY:", error?.body || error?.response?.data);
+    console.error("INSPECTION PHOTO ERROR JSON:", JSON.stringify(error, null, 2));
     await reply(event.replyToken, "產生檢查表失敗，請再試一次。");
   }
 }
 
 async function getLineImageBuffer(messageId) {
   const stream = await blobClient.getMessageContent(messageId);
-
   const chunks = [];
 
   for await (const chunk of stream) {
@@ -3228,14 +3228,8 @@ function drawPhotoBlock(doc, options) {
       valign: "center",
     });
   } catch (error) {
-  console.error("INSPECTION PHOTO ERROR:");
-  console.error(error);
-  console.error(JSON.stringify(error, null, 2));
-
-  await reply(
-    event.replyToken,
-    "產生檢查表失敗，請再試一次。"
-  );
+    console.error("DRAW PHOTO ERROR:", error);
+    doc.text("照片載入失敗", photoX + 20, y + 120);
   }
 }
 
