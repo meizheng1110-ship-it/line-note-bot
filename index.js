@@ -3180,7 +3180,7 @@ function drawEnvironmentInspectionPdfPage(doc, payload) {
     x: margin,
     y: 58,
     w: contentWidth,
-    h: 374,
+    h: 300,
     date: formatRocDate(info.date),
     location: info.location,
     item: info.item1,
@@ -3189,9 +3189,9 @@ function drawEnvironmentInspectionPdfPage(doc, payload) {
 
   drawEnvironmentPhotoBlock(doc, {
     x: margin,
-    y: 446,
+    y: 380,
     w: contentWidth,
-    h: 374,
+    h: 300,
     date: formatRocDate(info.date),
     location: info.location,
     item: info.item2 || info.item1,
@@ -3201,14 +3201,14 @@ function drawEnvironmentInspectionPdfPage(doc, payload) {
 
 function drawEnvironmentPhotoBlock(doc, options) {
   const { x, y, w, h, date, location, item, photo } = options;
-  const captionH = 38;
+  const captionH = 28;
   const photoH = h - captionH;
 
   doc.rect(x, y, w, h).stroke();
 
   try {
     doc.image(photo, x + 1, y + 1, {
-      fit: [w - 2, photoH - 2],
+      fit: [w - 10, photoH - 10],
       align: "center",
       valign: "center",
     });
