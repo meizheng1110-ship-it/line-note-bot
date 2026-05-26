@@ -3169,7 +3169,7 @@ if (draft.photos.length < 2) {
   return;
 }
 
-const result = await generateInspectionPdf(
+const pdfResult = await generateInspectionPdf(
   userId,
   draft
 );
@@ -3177,11 +3177,11 @@ const result = await generateInspectionPdf(
 inspectionDrafts.delete(draftKey);
 
 await reply(
-  event.replyToken,
+  replyToken,
   `檢查表已建立 ✅
 
 PDF：
-${result.pdfUrl}`
+${pdfResult.pdfUrl}`
 );
 
     const result = await generateInspectionPdf(userId, draft);
