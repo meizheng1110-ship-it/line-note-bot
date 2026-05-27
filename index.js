@@ -3616,7 +3616,23 @@ function drawWorkInspectionPdfPage(doc, payload) {
     ellipsis: true,
   });
 
-  drawWorkPhoto(doc, photo2, margin, 505, contentWidth, 290);
+  drawWorkPhoto(doc, photo2, margin, 505, contentWidth, 255);
+
+const infoY2 = 760;
+doc.rect(margin, infoY2, contentWidth, 55).stroke();
+
+doc.fontSize(11);
+doc.text(`地點：${info.location}`, margin + 10, infoY2 + 10, {
+  width: contentWidth - 20,
+  height: 18,
+  ellipsis: true,
+});
+
+doc.text(`說明：${info.item2 || info.item1}`, margin + 10, infoY2 + 32, {
+  width: contentWidth - 20,
+  height: 18,
+  ellipsis: true,
+});
 }
 function drawEnvironmentPhotoBlock(doc, options) {
   const { x, y, w, h, date, location, item, photo } = options;
