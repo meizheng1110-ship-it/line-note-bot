@@ -3147,41 +3147,46 @@ ${pdfResult.pdfUrl}`
 }
 
 function parseInspectionInfo(text) {
-  const info = {};
+  const getField = (labels) => {
+    const labelPattern = labels.join("|");
+    const nextLabels = [
+      "案名",
+      "日期",
+      "地點",
+      "抽查地點",
+      "項目1",
+      "項目一",
+      "項目2",
+      "項目二",
+      "項目3",
+      "項目三",
+      "施工項目1",
+      "施工項目一",
+      "施工項目2",
+      "施工項目二",
+      "施工項目3",
+      "施工項目三",
+    ].join("|");
 
-  const lines = text
-    .split("\n")
-    .map(v => v.trim())
-    .filter(Boolean);
+    const regex = new RegExp(
+      `(?:${labelPattern})[:：]\\s*([\\s\\S]*?)(?=\\s*(?:${nextLabels})[:：]|$)`
+    );
 
-  for (const line of lines) {
+    return text.match(regex)?.[1]?.trim() || null;
+  };
 
-    if (line.startsWith("案名")) {
-      info.projectName = line.split("：")[1]?.trim();
-    }
+  const item1 = getField(["項目1", "項目一", "施工項目1", "施工項目一", "項目"]);
+  const item2 = getField(["項目2", "項目二", "施工項目2", "施工項目二"]);
+  const item3 = getField(["項目3", "項目三", "施工項目3", "施工項目三"]);
 
-    else if (line.startsWith("日期")) {
-      info.date = line.split("：")[1]?.trim();
-    }
-
-    else if (line.startsWith("地點")) {
-      info.location = line.split("：")[1]?.trim();
-    }
-
-    else if (line.startsWith("項目1")) {
-      info.item1 = line.split("：")[1]?.trim();
-    }
-
-    else if (line.startsWith("項目2")) {
-      info.item2 = line.split("：")[1]?.trim();
-    }
-
-    else if (line.startsWith("項目3")) {
-      info.item3 = line.split("：")[1]?.trim();
-    }
-  }
-
-  return info;
+  return {
+    projectName: getField(["案名"]) || "",
+    date: getField(["日期"]),
+    location: getField(["地點", "抽查地點"]),
+    item1,
+    item2: item2 || item1,
+    item3: item3 || item2 || item1,
+  };
 }
 
 async function handleInspectionPhotoEvent(event, userId) {
