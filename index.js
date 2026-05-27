@@ -3376,6 +3376,29 @@ function drawImageCover(doc, imageBuffer, x, y, w, h) {
     doc.fontSize(12).text("照片載入失敗", x + 20, y + 120);
   }
 }
+function drawImageFill(doc, imageBuffer, x, y, w, h) {
+  try {
+    const image = doc.openImage(imageBuffer);
+    const scale = Math.max(w / image.width, h / image.height);
+
+    const drawW = image.width * scale;
+    const drawH = image.height * scale;
+    const drawX = x + (w - drawW) / 2;
+    const drawY = y + (h - drawH) / 2;
+
+    doc.save();
+    doc.rect(x, y, w, h).clip();
+    doc.image(imageBuffer, drawX, drawY, {
+      width: drawW,
+      height: drawH,
+    });
+    doc.restore();
+  } catch (error) {
+    console.error("DRAW IMAGE FILL ERROR:", error);
+    doc.fontSize(12).text("照片載入失敗", x + 20, y + 120);
+  }
+}
+
 function drawWorkPhoto(doc, imageBuffer, x, y, w, h) {
   try {
     doc.rect(x, y, w, h).stroke();
@@ -3555,7 +3578,7 @@ function drawSafetyPasteRow(doc, options) {
     ellipsis: true,
   });
 
-  drawImageCover(doc, photo, photoX + 1, y + 1, photoW - 2, h - 2);
+  drawImageFill(doc, photo, photoX + 1, y + 1, photoW - 2, h - 2);
 }
 
 function drawEnvironmentInspectionPdfPage(doc, payload) {
@@ -3640,11 +3663,7 @@ function drawWorkPhotoBlock(doc, options) {
   doc.rect(x, y, w, totalH).stroke();
   doc.moveTo(x, captionY).lineTo(x + w, captionY).stroke();
 
-  doc.image(photo, x + 1, y + 1, {
-    fit: [w - 2, photoH - 2],
-    align: "center",
-    valign: "center",
-  });
+ drawImageFill(doc, photo, x + 1, y + 1, w - 2, photoH - 2);
 
   doc.fontSize(11);
 
@@ -3670,7 +3689,7 @@ function drawEnvironmentPhotoBlock(doc, options) {
 
   doc.rect(x, y, w, h).stroke();
 
-  drawImageCover(doc, photo, x + 1, y + 1, w - 2, photoH - 2);
+ drawImageFill(doc, photo, x + 1, y + 1, w - 2, photoH - 2);
 
   doc.moveTo(x, captionY).lineTo(x + w, captionY).stroke();
 
