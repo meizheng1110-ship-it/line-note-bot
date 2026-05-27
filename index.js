@@ -3568,43 +3568,77 @@ function drawEnvironmentInspectionPdfPage(doc, payload) {
 
 function drawWorkInspectionPdfPage(doc, payload) {
   const { info, photo1, photo2 } = payload;
+
   const pageWidth = doc.page.width;
-  const margin = 58;
+  const margin = 45;
   const contentWidth = pageWidth - margin * 2;
 
-  doc.fontSize(15).text(info.projectName || "工作抽查", margin, 28, {
-    align: "center",
-    width: contentWidth,
-  });
+  // ===== 標題 =====
 
-  doc.fontSize(16).text("工作抽查紀錄相片", margin, 56, {
-    align: "center",
-    width: contentWidth,
-  });
+  doc.fontSize(15).text(
+    info.projectName || "工作抽查紀錄",
+    margin,
+    25,
+    {
+      align: "center",
+      width: contentWidth,
+    }
+  );
 
-  drawEnvironmentPhotoBlock(doc, {
-    x: margin,
-    y: 88,
-    w: contentWidth,
-    h: 345,
-    date: formatRocDate(info.date),
-    location: info.location,
-    item: info.item1,
-    photo: photo1,
-  });
+  doc.moveDown(0.3);
 
-  drawEnvironmentPhotoBlock(doc, {
-    x: margin,
-    y: 455,
-    w: contentWidth,
-    h: 345,
-    date: formatRocDate(info.date),
-    location: info.location,
-    item: info.item2 || info.item1,
-    photo: photo2,
-  });
+  doc.fontSize(18).text(
+    "工作抽查紀錄相片",
+    margin,
+    52,
+    {
+      align: "center",
+      width: contentWidth,
+    }
+  );
+
+  // ===== 第一張照片 =====
+
+  drawImageCover(
+    doc,
+    photo1,
+    margin,
+    95,
+    contentWidth,
+    300
+  );
+
+  // ===== 中間資訊區 =====
+
+  const infoY = 395;
+
+  doc.rect(margin, infoY, contentWidth, 58).stroke();
+
+  doc.fontSize(11);
+
+  doc.text(
+    `地點：${info.location}`,
+    margin + 10,
+    infoY + 10
+  );
+
+  doc.text(
+    `說明：${info.item1}`,
+    margin + 10,
+    infoY + 32
+  );
+
+  // ===== 第二張照片 =====
+
+  drawImageCover(
+    doc,
+    photo2,
+    margin,
+    455,
+    contentWidth,
+    300
+  );
 }
-
 function drawEnvironmentPhotoBlock(doc, options) {
   const { x, y, w, h, date, location, item, photo } = options;
 
