@@ -74,9 +74,11 @@ async function handleEvent(event) {
 
     // 報表照片上傳流程：只有使用者正在建立檢查表時才處理圖片
     if (event.message.type === "image") {
+    if (inspectionDrafts.has(getInspectionDraftKey(userId))) {
       await handleInspectionPhotoEvent(event, userId);
-      return;
     }
+    return;
+  }
 
     if (event.message.type !== "text") return;
 
@@ -3222,7 +3224,7 @@ function formatRocDate(dateText) {
   return `${parts.rocYear}.${String(parts.month).padStart(2, "0")}.${String(parts.day).padStart(2, "0")}`;
 }
 
-async function generateInspectionNumber(reportType, dateText) {
+async function generateInspectionNumber(userId, reportType, dateText) {
   const parts = parseRocDateParts(dateText);
   const prefix = reportType.prefix;
   const yymmdd = `${parts.rocYear}${String(parts.month).padStart(2, "0")}${String(parts.day).padStart(2, "0")}`;
@@ -3275,7 +3277,7 @@ function findChineseFontPath() {
   return candidates.find((item) => fs.existsSync(item)) || null;
 }
 
-async function generateInspectionNumber(userId, reportType, dateText) {
+async function generateInspectionPdf(userId, draft) {
   const { default: PDFDocument } = await import("pdfkit");
 
   const reportType = draft.reportType;
