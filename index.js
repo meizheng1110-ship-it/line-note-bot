@@ -86,6 +86,47 @@ async function handleEvent(event) {
     const normalizedText = normalizeInputText(userText);
 
     // 報表功能入口：放在最前面，命中才進入，不會拖慢其他功能
+    if (normalizedText === "建立檢查表") {
+  await client.replyMessage({
+    replyToken: event.replyToken,
+    messages: [
+      {
+        type: "text",
+        text: "請選擇要建立的檢查表：",
+        quickReply: {
+          items: [
+            {
+              type: "action",
+              action: {
+                type: "message",
+                label: "安衛檢查表",
+                text: "建立安衛檢查表",
+              },
+            },
+            {
+              type: "action",
+              action: {
+                type: "message",
+                label: "環保檢查表",
+                text: "建立環保檢查表",
+              },
+            },
+            {
+              type: "action",
+              action: {
+                type: "message",
+                label: "工作抽查表",
+                text: "建立工作抽查表",
+              },
+            },
+          ],
+        },
+      },
+    ],
+  });
+  return;
+}
+    
     if (isInspectionStartIntent(normalizedText)) {
       await startInspectionReportFlow(event.replyToken, userId, normalizedText);
       return;
