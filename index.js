@@ -3101,7 +3101,7 @@ function parseInspectionInfo(text) {
   const item3Match = text.match(/(?:項目3|項目三|施工項目3|施工項目三)[:：]\s*([^\n]+)/);
   return {
     projectName:
-  text.match(/案名[:：]\s*(.+)/)?.[1] || "",
+  text.match(/案名[:：]\s*(.+)/)?.[1]?.trim() || "",
     date: dateMatch?.[1]?.trim() || null,
     location: locationMatch?.[1]?.trim() || null,
     item1: item1Match?.[1]?.trim() || null,
@@ -3116,7 +3116,7 @@ async function handleInspectionPhotoEvent(event, userId) {
 
   if (!draft) return;
 
-  if (!["photos", "wait_third_photo"].includes(draft.step)) {
+  if (!["photos", "wait_third_photo","wait_safety_choice"].includes(draft.step)) {
     await reply(event.replyToken, "請先輸入檢查表資料，再上傳照片。");
     return;
   }
@@ -3364,6 +3364,20 @@ function drawImageCover(doc, imageBuffer, x, y, w, h) {
     doc.fontSize(12).text("照片載入失敗", x + 20, y + 120);
   }
 }
+function drawWorkPhoto(doc, imageBuffer, x, y, w, h) {
+  try {
+    doc.rect(x, y, w, h).stroke();
+
+    doc.image(imageBuffer, x + 1, y + 1, {
+      fit: [w - 2, h - 2],
+      align: "center",
+      valign: "center",
+    });
+  } catch (error) {
+    console.error("DRAW WORK PHOTO ERROR:", error);
+    doc.fontSize(12).text("照片載入失敗", x + 20, y + 120);
+  }
+}
 
 function drawInspectionPdfPage(doc, payload) {
 
@@ -3570,74 +3584,38 @@ function drawWorkInspectionPdfPage(doc, payload) {
   const { info, photo1, photo2 } = payload;
 
   const pageWidth = doc.page.width;
-  const margin = 45;
+  const margin = 28;
   const contentWidth = pageWidth - margin * 2;
 
-  // ===== 標題 =====
+  doc.fontSize(15).text(info.projectName || "工作抽查紀錄", margin, 28, {
+    align: "center",
+    width: contentWidth,
+  });
 
-  doc.fontSize(15).text(
-    info.projectName || "工作抽查紀錄",
-    margin,
-    25,
-    {
-      align: "center",
-      width: contentWidth,
-    }
-  );
+  doc.fontSize(18).text("工作抽查紀錄相片", margin, 58, {
+    align: "center",
+    width: contentWidth,
+  });
 
-  doc.moveDown(0.3);
+  drawWorkPhoto(doc, photo1, margin, 105, contentWidth, 315);
 
-  doc.fontSize(18).text(
-    "工作抽查紀錄相片",
-    margin,
-    52,
-    {
-      align: "center",
-      width: contentWidth,
-    }
-  );
-
-  // ===== 第一張照片 =====
-
-  drawImageCover(
-    doc,
-    photo1,
-    margin,
-    95,
-    contentWidth,
-    300
-  );
-
-  // ===== 中間資訊區 =====
-
-  const infoY = 395;
-
-  doc.rect(margin, infoY, contentWidth, 58).stroke();
+  const infoY = 420;
+  doc.rect(margin, infoY, contentWidth, 62).stroke();
 
   doc.fontSize(11);
+  doc.text(`地點：${info.location}`, margin + 10, infoY + 12, {
+    width: contentWidth - 20,
+    height: 18,
+    ellipsis: true,
+  });
 
-  doc.text(
-    `地點：${info.location}`,
-    margin + 10,
-    infoY + 10
-  );
+  doc.text(`說明：${info.item1}`, margin + 10, infoY + 36, {
+    width: contentWidth - 20,
+    height: 18,
+    ellipsis: true,
+  });
 
-  doc.text(
-    `說明：${info.item1}`,
-    margin + 10,
-    infoY + 32
-  );
-
-  // ===== 第二張照片 =====
-
-  drawImageCover(
-    doc,
-    photo2,
-    margin,
-    455,
-    contentWidth,
-    300
-  );
+  drawWorkPhoto(doc, photo2, margin, 482, contentWidth, 315);
 }
 function drawEnvironmentPhotoBlock(doc, options) {
   const { x, y, w, h, date, location, item, photo } = options;
