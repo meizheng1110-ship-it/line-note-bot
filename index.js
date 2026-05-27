@@ -3600,8 +3600,9 @@ function drawWorkInspectionPdfPage(doc, payload) {
   drawWorkPhoto(doc, photo1, margin, 105, contentWidth, 315);
 
   const infoY = 420;
-  doc.rect(margin, infoY, contentWidth, 62).stroke();
+  const infoBoxHeight = 82;
 
+  doc.rect(margin, infoY, contentWidth, infoBoxHeight).stroke();
   doc.fontSize(11);
   doc.text(`地點：${info.location}`, margin + 10, infoY + 12, {
     width: contentWidth - 20,
@@ -3615,7 +3616,7 @@ function drawWorkInspectionPdfPage(doc, payload) {
     ellipsis: true,
   });
 
-  drawWorkPhoto(doc, photo2, margin, 482, contentWidth, 315);
+  drawWorkPhoto(doc, photo2, margin, 505, contentWidth, 290);
 }
 function drawEnvironmentPhotoBlock(doc, options) {
   const { x, y, w, h, date, location, item, photo } = options;
