@@ -3628,7 +3628,7 @@ function drawSafetyPasteRow(doc, options) {
     ellipsis: true,
   });
 
-  drawImageFill(doc, photo, photoX + 1, y + 1, photoW - 2, h - 2);
+  drawImageContain(doc, photo, photoX + 1, y + 1, photoW - 2, h - 2);
 }
 
 function drawEnvironmentInspectionPdfPage(doc, payload) {
@@ -3713,7 +3713,7 @@ function drawWorkPhotoBlock(doc, options) {
   doc.rect(x, y, w, totalH).stroke();
   doc.moveTo(x, captionY).lineTo(x + w, captionY).stroke();
 
- drawImageFill(doc, photo, x + 1, y + 1, w - 2, photoH - 2);
+ drawImageContain(doc, photo, x + 1, y + 1, w - 2, photoH - 2);
 
   doc.fontSize(11);
 
@@ -3739,7 +3739,7 @@ function drawEnvironmentPhotoBlock(doc, options) {
 
   doc.rect(x, y, w, h).stroke();
 
- drawImageFill(doc, photo, x + 1, y + 1, w - 2, photoH - 2);
+ drawImageContain(doc, photo, x + 1, y + 1, w - 2, photoH - 2);
 
   doc.moveTo(x, captionY).lineTo(x + w, captionY).stroke();
 
