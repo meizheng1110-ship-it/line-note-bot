@@ -3584,7 +3584,7 @@ function drawWorkInspectionPdfPage(doc, payload) {
   const { info, photo1, photo2 } = payload;
 
   const pageWidth = doc.page.width;
-  const margin = 28;
+  const margin = 42;
   const contentWidth = pageWidth - margin * 2;
 
   doc.fontSize(15).text(info.projectName || "工作抽查紀錄", margin, 28, {
@@ -3597,42 +3597,27 @@ function drawWorkInspectionPdfPage(doc, payload) {
     width: contentWidth,
   });
 
-  drawWorkPhoto(doc, photo1, margin, 105, contentWidth, 315);
-
-  const infoY = 420;
-  const infoBoxHeight = 82;
-
-  doc.rect(margin, infoY, contentWidth, infoBoxHeight).stroke();
-  doc.fontSize(11);
-  doc.text(`地點：${info.location}`, margin + 10, infoY + 12, {
-    width: contentWidth - 20,
-    height: 18,
-    ellipsis: true,
+  drawWorkPhotoBlock(doc, {
+    x: margin,
+    y: 100,
+    w: contentWidth,
+    photoH: 285,
+    captionH: 62,
+    photo: photo1,
+    location: info.location,
+    item: info.item1,
   });
 
-  doc.text(`說明：${info.item1}`, margin + 10, infoY + 36, {
-    width: contentWidth - 20,
-    height: 18,
-    ellipsis: true,
+  drawWorkPhotoBlock(doc, {
+    x: margin,
+    y: 455,
+    w: contentWidth,
+    photoH: 285,
+    captionH: 62,
+    photo: photo2,
+    location: info.location,
+    item: info.item2 || info.item1,
   });
-
-  drawWorkPhoto(doc, photo2, margin, 505, contentWidth, 255);
-
-const infoY2 = 760;
-doc.rect(margin, infoY2, contentWidth, 55).stroke();
-
-doc.fontSize(11);
-doc.text(`地點：${info.location}`, margin + 10, infoY2 + 10, {
-  width: contentWidth - 20,
-  height: 18,
-  ellipsis: true,
-});
-
-doc.text(`說明：${info.item2 || info.item1}`, margin + 10, infoY2 + 32, {
-  width: contentWidth - 20,
-  height: 18,
-  ellipsis: true,
-});
 }
 function drawEnvironmentPhotoBlock(doc, options) {
   const { x, y, w, h, date, location, item, photo } = options;
