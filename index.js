@@ -3605,7 +3605,7 @@ function drawEnvironmentInspectionPdfPage(doc, payload) {
 
   drawEnvironmentPhotoBlock(doc, {
     x: margin,
-    y: 438,
+    y: 418,
     w: contentWidth,
     h: 360,
     date: formatRocDate(info.date),
