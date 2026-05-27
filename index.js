@@ -3230,6 +3230,7 @@ async function generateInspectionNumber(reportType, dateText) {
   const { count, error } = await supabase
     .from("inspection_reports")
     .select("id", { count: "exact", head: true })
+    .eq("line_user_id", userId)
     .eq("report_type", reportType.type)
     .gte("report_no", `${prefix}${yymmdd}00`)
     .lte("report_no", `${prefix}${yymmdd}99`);
@@ -3274,12 +3275,12 @@ function findChineseFontPath() {
   return candidates.find((item) => fs.existsSync(item)) || null;
 }
 
-async function generateInspectionPdf(userId, draft) {
+async function generateInspectionNumber(userId, reportType, dateText) {
   const { default: PDFDocument } = await import("pdfkit");
 
   const reportType = draft.reportType;
   const info = draft.info;
-  const reportNo = await generateInspectionNumber(reportType, info.date);
+  const reportNo = await generateInspectionNumber(userId, reportType, info.date);
   const safeReportNo = reportNo.replace(/[^\w\u4e00-\u9fa5-]/g, "");
   const pdfName = `${safeReportNo}.pdf`;
   const pdfPath = path.join(GENERATED_DIR, pdfName);
@@ -3406,60 +3407,127 @@ function drawInspectionPdfPage(doc, payload) {
     );
   }
 }
+function drawSafetyInspectionPdfPage2(doc, payload) {
+  const { reportNo, info, photo1, photo2 } = payload;
+
+  drawSafetyPhotoPastePage(doc, {
+    reportNo,
+    info,
+    photos: [photo1, photo2],
+    items: [info.item1, info.item2 || info.item1],
+    pageNo: 1,
+    totalPages: 1,
+  });
+}
+
 function drawSafetyInspectionPdfPage3(doc, payload) {
   const { reportNo, info, photo1, photo2, photo3 } = payload;
+
+  drawSafetyPhotoPastePage(doc, {
+    reportNo,
+    info,
+    photos: [photo1, photo2, photo3],
+    items: [
+      info.item1,
+      info.item2 || info.item1,
+      info.item3 || info.item2 || info.item1,
+    ],
+    pageNo: 1,
+    totalPages: 1,
+  });
+}
+
+function drawSafetyPhotoPastePage(doc, options) {
+  const { reportNo, info, photos, items, pageNo, totalPages } = options;
+
   const pageWidth = doc.page.width;
-  const margin = 58;
+  const margin = 42;
   const contentWidth = pageWidth - margin * 2;
+  const leftW = 130;
+  const startY = 112;
+  const rowH = photos.length >= 3 ? 218 : 325;
 
-  doc.fontSize(14).text("交通部高速公路局中區養護工程分局", margin, 28, {
+  doc.fontSize(15).text("交通部高速公路局中區養護工程分局", margin, 35, {
     align: "center",
     width: contentWidth,
   });
 
-  doc.fontSize(16).text("安全衛生抽查照片黏貼表", margin, 52, {
+  doc.fontSize(18).text("安全衛生抽查照片黏貼表", margin, 62, {
     align: "center",
     width: contentWidth,
   });
 
-  doc.fontSize(9).text(`抽查編號：${reportNo}`, margin, 82);
-  doc.fontSize(9).text("第 1 頁 共 1 頁", pageWidth - margin - 110, 82, {
+  doc.fontSize(9).text(`抽查編號：${reportNo}`, margin, 94, {
+    width: 260,
+  });
+
+  doc.fontSize(9).text(`第 ${pageNo} 頁 共 ${totalPages} 頁`, pageWidth - margin - 120, 94, {
     align: "right",
-    width: 110,
+    width: 120,
   });
 
-  drawEnvironmentPhotoBlock(doc, {
-    x: margin,
-    y: 105,
-    w: contentWidth,
-    h: 225,
-    date: formatRocDate(info.date),
-    location: info.location,
-    item: info.item1,
-    photo: photo1,
+  photos.forEach((photo, index) => {
+    drawSafetyPasteRow(doc, {
+      x: margin,
+      y: startY + index * rowH,
+      w: contentWidth,
+      h: rowH,
+      leftW,
+      photo,
+      description: "安全衛生抽查",
+      date: formatRocDate(info.date),
+      item: items[index],
+      location: info.location,
+    });
   });
 
-  drawEnvironmentPhotoBlock(doc, {
-    x: margin,
-    y: 345,
-    w: contentWidth,
-    h: 225,
-    date: formatRocDate(info.date),
-    location: info.location,
-    item: info.item2 || info.item1,
-    photo: photo2,
+  doc.save();
+  doc.rotate(90, { origin: [pageWidth - 20, 132] });
+  doc.fontSize(8).text("註：本表乙份由抽查單位存查。", pageWidth - 20, 132, {
+    width: 260,
+  });
+  doc.restore();
+}
+
+function drawSafetyPasteRow(doc, options) {
+  const { x, y, w, h, leftW, photo, description, date, item, location } = options;
+
+  const photoX = x + leftW;
+  const photoW = w - leftW;
+
+  doc.rect(x, y, w, h).stroke();
+  doc.moveTo(photoX, y).lineTo(photoX, y + h).stroke();
+
+  doc.fontSize(9);
+
+  doc.text(`說明：\n${description}`, x + 8, y + 8, {
+    width: leftW - 16,
+    height: 44,
+    lineGap: 2,
+    ellipsis: true,
   });
 
-  drawEnvironmentPhotoBlock(doc, {
-    x: margin,
-    y: 585,
-    w: contentWidth,
-    h: 225,
-    date: formatRocDate(info.date),
-    location: info.location,
-    item: info.item3 || info.item2 || info.item1,
-    photo: photo3,
+  doc.text(`日期：${date}`, x + 8, y + 66, {
+    width: leftW - 16,
+    height: 18,
+    ellipsis: true,
   });
+
+  doc.text(`施工項目：\n${item}`, x + 8, y + 112, {
+    width: leftW - 16,
+    height: 52,
+    lineGap: 2,
+    ellipsis: true,
+  });
+
+  doc.text(`地點：\n${location}`, x + 8, y + 172, {
+    width: leftW - 16,
+    height: h - 180,
+    lineGap: 2,
+    ellipsis: true,
+  });
+
+  drawImageCover(doc, photo, photoX + 1, y + 1, photoW - 2, h - 2);
 }
 
 function drawEnvironmentInspectionPdfPage(doc, payload) {
@@ -3495,6 +3563,7 @@ function drawEnvironmentInspectionPdfPage(doc, payload) {
     photo: photo2,
   });
 }
+
 function drawWorkInspectionPdfPage(doc, payload) {
   const { info, photo1, photo2 } = payload;
   const pageWidth = doc.page.width;
@@ -3537,15 +3606,13 @@ function drawWorkInspectionPdfPage(doc, payload) {
 function drawEnvironmentPhotoBlock(doc, options) {
   const { x, y, w, h, date, location, item, photo } = options;
 
-  // 固定表格高度，不讓照片比例影響表格與文字位置
   const captionH = 38;
   const photoH = h - captionH;
   const captionY = y + photoH;
 
   doc.rect(x, y, w, h).stroke();
 
-  // 照片固定塞入同一個框，過寬或過高就置中裁切，不會把文字擠到下一頁
-  drawImageCover(doc, photo, x + 1, y + 1, w - 2, photoH - 24);
+  drawImageCover(doc, photo, x + 1, y + 1, w - 2, photoH - 2);
 
   doc.moveTo(x, captionY).lineTo(x + w, captionY).stroke();
 
@@ -3553,6 +3620,7 @@ function drawEnvironmentPhotoBlock(doc, options) {
   const rightW = w - leftW;
 
   doc.fontSize(9);
+
   doc.text(`日期：${date}`, x + 6, captionY + 5, {
     width: leftW - 12,
     height: 12,
@@ -3570,104 +3638,6 @@ function drawEnvironmentPhotoBlock(doc, options) {
     height: 12,
     ellipsis: true,
   });
-}
-
-function drawSafetyInspectionPdfPage2(doc, payload) {
-  const { reportNo, info, photo1, photo2 } = payload;
-  const pageWidth = doc.page.width;
-  const margin = 58;
-  const contentWidth = pageWidth - margin * 2;
-
-  doc.fontSize(14).text("交通部高速公路局中區養護工程分局", margin, 28, {
-    align: "center",
-    width: contentWidth,
-  });
-
-  doc.fontSize(16).text("安全衛生抽查照片黏貼表", margin, 52, {
-    align: "center",
-    width: contentWidth,
-  });
-
-  doc.fontSize(9).text(`抽查編號：${reportNo}`, margin, 82);
-  doc.fontSize(9).text("第 1 頁 共 1 頁", pageWidth - margin - 110, 82, {
-    align: "right",
-    width: 110,
-  });
-
-  drawEnvironmentPhotoBlock(doc, {
-    x: margin,
-    y: 105,
-    w: contentWidth,
-    h: 340,
-    date: formatRocDate(info.date),
-    location: info.location,
-    item: info.item1,
-    photo: photo1,
-  });
-
-  drawEnvironmentPhotoBlock(doc, {
-    x: margin,
-    y: 465,
-    w: contentWidth,
-    h: 340,
-    date: formatRocDate(info.date),
-    location: info.location,
-    item: info.item2 || info.item1,
-    photo: photo2,
-  });
-}
-
-function drawSafetyPhotoBlock(doc, options) {
-  const { x, y, w, h, description, date, item, location, photo } = options;
-  const leftW = 142;
-  const photoX = x + leftW;
-  const photoW = w - leftW;
-
-  doc.rect(x, y, w, h).stroke();
-  doc.moveTo(photoX, y).lineTo(photoX, y + h).stroke();
-
-  doc.fontSize(9);
-  let textY = y + 10;
-
-  doc.text(`說明：\n${description}`, x + 8, textY, {
-    width: leftW - 16,
-    height: 40,
-    lineGap: 3,
-    ellipsis: true,
-  });
-
-  textY += 58;
-  doc.text(`日期：${date}`, x + 8, textY, {
-    width: leftW - 16,
-    height: 16,
-    ellipsis: true,
-  });
-
-  textY += 40;
-  doc.text(`施工項目：\n${item}`, x + 8, textY, {
-    width: leftW - 16,
-    height: 36,
-    lineGap: 3,
-    ellipsis: true,
-  });
-
-  textY += 46;
-  doc.text(`抽查地點：\n${location}`, x + 8, textY, {
-    width: leftW - 16,
-    height: 42,
-    lineGap: 3,
-    ellipsis: true,
-  });
-
-  // 固定照片欄位，置中裁切，不讓照片比例改變表格大小
-  drawImageCover(
-  doc,
-  photo,
-  photoX + 1,
-  y + 1,
-  photoW - 2,
-  h - 2
-);
 }
 
 
