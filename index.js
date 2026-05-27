@@ -3619,6 +3619,36 @@ function drawWorkInspectionPdfPage(doc, payload) {
     item: info.item2 || info.item1,
   });
 }
+function drawWorkPhotoBlock(doc, options) {
+  const { x, y, w, photoH, captionH, photo, location, item } = options;
+
+  const totalH = photoH + captionH;
+  const captionY = y + photoH;
+
+  doc.rect(x, y, w, totalH).stroke();
+  doc.moveTo(x, captionY).lineTo(x + w, captionY).stroke();
+
+  doc.image(photo, x + 1, y + 1, {
+    fit: [w - 2, photoH - 2],
+    align: "center",
+    valign: "center",
+  });
+
+  doc.fontSize(11);
+
+  doc.text(`地點：${location}`, x + 10, captionY + 10, {
+    width: w - 20,
+    height: 18,
+    ellipsis: true,
+  });
+
+  doc.text(`說明：${item}`, x + 10, captionY + 34, {
+    width: w - 20,
+    height: 18,
+    ellipsis: true,
+  });
+}
+
 function drawEnvironmentPhotoBlock(doc, options) {
   const { x, y, w, h, date, location, item, photo } = options;
 
