@@ -3396,28 +3396,6 @@ async function generateInspectionPdf(userId, draft) {
 }
 
 
-function drawImageContain(doc, photo, x, y, w, h) {
-  try {
-    const image = doc.openImage(imageBuffer);
-    const scale = Math.min(w / image.width, h / image.height);
-    const drawW = image.width * scale;
-    const drawH = image.height * scale;
-    const drawX = x + (w - drawW) / 2;
-    const drawY = y + (h - drawH) / 2;
-
-    doc.save();
-    doc.rect(x, y, w, h).clip();
-    doc.image(imageBuffer, drawX, drawY, {
-      width: drawW,
-      height: drawH,
-    });
-    doc.restore();
-  } catch (error) {
-    console.error("DRAW PHOTO ERROR:", error);
-    doc.fontSize(12).text("照片載入失敗", x + 20, y + 120);
-  }
-}
-
 function drawImageContain(doc, imagePath, x, y, boxW, boxH) {
   try {
     const img = doc.openImage(imagePath);
