@@ -3645,7 +3645,7 @@ function drawWorkInspectionPdfPage(doc, payload) {
 
   drawWorkPhotoBlock(doc, {
     x: margin,
-    y: 455,
+    y: 447,
     w: contentWidth,
     photoH: 285,
     captionH: 62,
