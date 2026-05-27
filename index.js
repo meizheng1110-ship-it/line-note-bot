@@ -3405,7 +3405,7 @@ function drawImageContain(doc, imagePath, x, y, boxW, boxH) {
 
     let drawW;
     let drawH;
-    const padding = 18;
+    const padding = 25;
 
     if (imgRatio > boxRatio) {
       drawW = boxW - padding * 2;
