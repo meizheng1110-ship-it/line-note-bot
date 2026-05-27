@@ -3147,20 +3147,41 @@ ${pdfResult.pdfUrl}`
 }
 
 function parseInspectionInfo(text) {
-  const dateMatch = text.match(/日期[:：]\s*([^\n]+)/);
-  const locationMatch = text.match(/(?:地點|抽查地點)[:：]\s*([^\n]+)/);
-  const item1Match = text.match(/(?:項目1|項目一|施工項目1|施工項目一|項目)[:：]\s*([^\n]+)/);
-  const item2Match = text.match(/(?:項目2|項目二|施工項目2|施工項目二)[:：]\s*([^\n]+)/);
-  const item3Match = text.match(/(?:項目3|項目三|施工項目3|施工項目三)[:：]\s*([^\n]+)/);
-  return {
-    projectName:
-  text.match(/案名[:：]\s*(.+)/)?.[1]?.trim() || "",
-    date: dateMatch?.[1]?.trim() || null,
-    location: locationMatch?.[1]?.trim() || null,
-    item1: item1Match?.[1]?.trim() || null,
-    item2: item2Match?.[1]?.trim() || item1Match?.[1]?.trim() || null,
-    item3: item3Match?.[1]?.trim() || item2Match?.[1]?.trim() || item1Match?.[1]?.trim() || null,
-  };
+  const info = {};
+
+  const lines = text
+    .split("\n")
+    .map(v => v.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+
+    if (line.startsWith("案名")) {
+      info.projectName = line.split("：")[1]?.trim();
+    }
+
+    else if (line.startsWith("日期")) {
+      info.date = line.split("：")[1]?.trim();
+    }
+
+    else if (line.startsWith("地點")) {
+      info.location = line.split("：")[1]?.trim();
+    }
+
+    else if (line.startsWith("項目1")) {
+      info.item1 = line.split("：")[1]?.trim();
+    }
+
+    else if (line.startsWith("項目2")) {
+      info.item2 = line.split("：")[1]?.trim();
+    }
+
+    else if (line.startsWith("項目3")) {
+      info.item3 = line.split("：")[1]?.trim();
+    }
+  }
+
+  return info;
 }
 
 async function handleInspectionPhotoEvent(event, userId) {
