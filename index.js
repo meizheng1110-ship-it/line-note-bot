@@ -315,12 +315,24 @@ async function handleEvent(event) {
 
     // 6. 有明確日期或時間，就優先當成建立提醒
     // 例如：5/26 早上10點要開線上會議、明天早上8點開會、2分鐘後提醒我喝水
-    const isReminderCreationText = isTimeBasedReminderCreationIntent(normalizedText);
+    const looksLikeInspectionInfo = /日期[:：]/.test(userText) &&
+  /(地點|抽查地點)[:：]/.test(userText) &&
+  /項目1[:：]/.test(userText);
 
-    if (isReminderCreationText) {
-      await createReminderFromText(event.replyToken, userId, userText);
-      return;
-    }
+if (looksLikeInspectionInfo && !inspectionDrafts.has(getInspectionDraftKey(userId))) {
+  await reply(
+    event.replyToken,
+    "目前沒有正在建立中的檢查表，可能是服務重啟導致流程中斷。\n\n請重新輸入：\n建立工作抽查表"
+  );
+  return;
+}
+
+const isReminderCreationText = isTimeBasedReminderCreationIntent(normalizedText);
+
+if (isReminderCreationText) {
+  await createReminderFromText(event.replyToken, userId, userText);
+  return;
+}
 
     // 7. 沒有明確日期時間，但像「我去開會 / 工作抽查 / 會勘 / 請假」才建立工作回報
     const workReport = parseWorkReport(userText);
