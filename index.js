@@ -3396,7 +3396,7 @@ async function generateInspectionPdf(userId, draft) {
 }
 
 
-function drawImageCover(doc, imageBuffer, x, y, w, h) {
+function drawImageContain(doc, photo, x, y, w, h) {
   try {
     const image = doc.openImage(imageBuffer);
     const scale = Math.min(w / image.width, h / image.height);
@@ -3415,6 +3415,36 @@ function drawImageCover(doc, imageBuffer, x, y, w, h) {
   } catch (error) {
     console.error("DRAW PHOTO ERROR:", error);
     doc.fontSize(12).text("照片載入失敗", x + 20, y + 120);
+  }
+}
+
+function drawImageContain(doc, imagePath, x, y, boxW, boxH) {
+  try {
+    const img = doc.openImage(imagePath);
+
+    const imgRatio = img.width / img.height;
+    const boxRatio = boxW / boxH;
+
+    let drawW;
+    let drawH;
+
+    if (imgRatio > boxRatio) {
+      drawW = boxW;
+      drawH = boxW / imgRatio;
+    } else {
+      drawH = boxH;
+      drawW = boxH * imgRatio;
+    }
+
+    const offsetX = x + (boxW - drawW) / 2;
+    const offsetY = y + (boxH - drawH) / 2;
+
+    doc.image(imagePath, offsetX, offsetY, {
+      width: drawW,
+      height: drawH,
+    });
+  } catch (err) {
+    console.error("DRAW IMAGE CONTAIN ERROR:", err);
   }
 }
 function drawImageFill(doc, imageBuffer, x, y, w, h) {
