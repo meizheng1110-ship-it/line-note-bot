@@ -3405,13 +3405,14 @@ function drawImageContain(doc, imagePath, x, y, boxW, boxH) {
 
     let drawW;
     let drawH;
+    const padding = 18;
 
     if (imgRatio > boxRatio) {
-      drawW = boxW;
-      drawH = boxW / imgRatio;
+      drawW = boxW - padding * 2;
+      drawH = drawW / imgRatio;
     } else {
-      drawH = boxH;
-      drawW = boxH * imgRatio;
+      drawH = boxH - padding * 2;
+      drawW = drawH * imgRatio;
     }
 
     const offsetX = x + (boxW - drawW) / 2;
