@@ -3703,14 +3703,14 @@ function drawWorkInspectionPdfPage(doc, payload) {
     width: contentWidth,
   });
 
-  doc.fontSize(18).text("工作抽查紀錄相片", margin, 58, {
+  doc.fontSize(18).text("工作抽查紀錄相片", margin, 78, {
     align: "center",
     width: contentWidth,
   });
 
   drawWorkPhotoBlock(doc, {
     x: margin,
-    y: 100,
+    y: 120,
     w: contentWidth,
     photoH: 285,
     captionH: 62,
@@ -3721,7 +3721,7 @@ function drawWorkInspectionPdfPage(doc, payload) {
 
   drawWorkPhotoBlock(doc, {
     x: margin,
-    y: 447,
+    y: 467,
     w: contentWidth,
     photoH: 285,
     captionH: 62,
