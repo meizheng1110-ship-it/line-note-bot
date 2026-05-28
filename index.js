@@ -2928,6 +2928,7 @@ async function startInspectionReportFlow(replyToken, userId, text) {
 
 案名：112-115 年人工智慧匝道儀控系統維護工作
 日期：115/05/26
+編號：01
 地點：交控中心3樓機房
 項目1：AIRMS 伺服器定期保養檢查
 項目2：AIRMS 系統檢測作業
@@ -2945,6 +2946,7 @@ async function startInspectionReportFlow(replyToken, userId, text) {
 請一次輸入以下資料：
 
 日期：115/05/26
+編號:01
 地點：交控中心3樓機房
 項目1：環境清潔內業檢查
 項目2：環境清潔檢查
@@ -3037,6 +3039,7 @@ ${pdfResult.pdfUrl}`
 
 案名：112-115 年人工智慧匝道儀控系統維護工作
 日期：115/05/26
+編號：01
 地點：交控中心3樓機房
 項目1：AIRMS 伺服器定期保養檢查
 項目2：AIRMS 系統檢測作業`
@@ -3047,16 +3050,18 @@ ${pdfResult.pdfUrl}`
 
     // 基本欄位
     if (
-      !info.date ||
-      !info.location ||
-      !info.item1
-    ) {
+  !info.date ||
+  !info.serialNo ||
+  !info.location ||
+  !info.item1
+) {
 
       await reply(
         replyToken,
         `資料不完整，請照格式輸入：
 
 日期：115/05/26
+編號：01
 地點：交控中心3樓機房
 項目1：檢查內容
 項目2：檢查內容`
@@ -3081,6 +3086,7 @@ ${pdfResult.pdfUrl}`
 案名：${info.projectName}
 
 日期：${info.date}
+編號：${info.serialNo}
 地點：${info.location}
 項目1：${info.item1}
 項目2：${info.item2 || info.item1}
@@ -3099,6 +3105,7 @@ ${pdfResult.pdfUrl}`
         `資料已收到 ✅
 
 日期：${info.date}
+編號：${info.serialNo}
 地點：${info.location}
 項目1：${info.item1}
 項目2：${info.item2 || info.item1}
@@ -3116,6 +3123,7 @@ ${pdfResult.pdfUrl}`
       `資料已收到 ✅
 
 日期：${info.date}
+編號：${info.serialNo}
 地點：${info.location}
 項目1：${info.item1}
 項目2：${info.item2 || info.item1}
@@ -3152,6 +3160,8 @@ function parseInspectionInfo(text) {
     const nextLabels = [
       "案名",
       "日期",
+      "編號",
+      "序號",
       "地點",
       "抽查地點",
       "項目1",
@@ -3182,6 +3192,7 @@ function parseInspectionInfo(text) {
   return {
     projectName: getField(["案名"]) || "",
     date: getField(["日期"]),
+    serialNo: getField(["編號", "序號"]),
     location: getField(["地點", "抽查地點"]),
     item1,
     item2: item2 || item1,
@@ -3303,24 +3314,13 @@ function formatRocDate(dateText) {
   return `${parts.rocYear}.${String(parts.month).padStart(2, "0")}.${String(parts.day).padStart(2, "0")}`;
 }
 
-async function generateInspectionNumber(userId, reportType, dateText) {
+async function generateInspectionNumber(userId, reportType, dateText, serialNo) {
   const parts = parseRocDateParts(dateText);
   const prefix = reportType.prefix;
   const yymmdd = `${parts.rocYear}${String(parts.month).padStart(2, "0")}${String(parts.day).padStart(2, "0")}`;
 
-  const { count, error } = await supabase
-    .from("inspection_reports")
-    .select("id", { count: "exact", head: true })
-    .eq("line_user_id", userId)
-    .eq("report_type", reportType.type)
-    .gte("report_no", `${prefix}${yymmdd}00`)
-    .lte("report_no", `${prefix}${yymmdd}99`);
+  const serial = String(serialNo || "01").replace(/\D/g, "").padStart(2, "0");
 
-  if (error) {
-    console.error("GENERATE INSPECTION NUMBER ERROR:", error);
-  }
-
-  const serial = String((count || 0) + 1).padStart(2, "0");
   return `${prefix}${yymmdd}${serial}`;
 }
 
@@ -3361,7 +3361,7 @@ async function generateInspectionPdf(userId, draft) {
 
   const reportType = draft.reportType;
   const info = draft.info;
-  const reportNo = await generateInspectionNumber(userId, reportType, info.date);
+ const reportNo = await generateInspectionNumber(userId, reportType, info.date, info.serialNo);
   const safeReportNo = reportNo.replace(/[^\w\u4e00-\u9fa5-]/g, "");
   const pdfName = `${safeReportNo}.pdf`;
   const pdfPath = path.join(GENERATED_DIR, pdfName);
