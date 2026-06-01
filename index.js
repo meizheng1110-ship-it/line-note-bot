@@ -2841,7 +2841,7 @@ async function deleteFutureReminder(replyToken, userId, number) {
     .eq("status", "scheduled")
     .gte("remind_at", now)
     .order("remind_at", { ascending: true })
-    .limit(10);
+    .limit(50);
 
   if (error) {
     console.error(error);
