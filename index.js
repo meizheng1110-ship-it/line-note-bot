@@ -3953,46 +3953,49 @@ cron.schedule("0 * * * * *", async () => {
         });
 
         if (reminder.repeat_type === "daily") {
-          const [hour, minute] = reminder.repeat_time.split(":").map(Number);
-          const nextTime = nextTaipeiTime(hour, minute);
+  const [hour, minute] = reminder.repeat_time.split(":").map(Number);
+  const nextTime = nextTaipeiTime(hour, minute);
 
-          await supabase
-            .from("reminders")
-            .update({
-              remind_at: toTaipeiISOString(nextTime),
-              status: "scheduled",
-            })
-            .eq("id", reminder.id);
-        } else if (reminder.repeat_type === "weekly") {
-          const [hour, minute] = reminder.repeat_time.split(":").map(Number);
-          const nextTime = nextWeeklyTime(reminder.repeat_day, hour, minute);
+  await supabase
+    .from("reminders")
+    .update({
+      remind_at: toTaipeiISOString(nextTime),
+      status: "scheduled",
+    })
+    .eq("id", reminder.id);
 
-          await supabase
-            .from("reminders")
-            .update({
-              remind_at: toTaipeiISOString(nextTime),
-              status: "scheduled",
-            })
-            .eq("id", reminder.id);
-        } else if (reminder.repeat_type === "monthly") {
-          const [hour, minute] = reminder.repeat_time.split(":").map(Number);
-          const nextTime = nextMonthlyTime(reminder.repeat_day, hour, minute);
+} else if (reminder.repeat_type === "weekly") {
+  const [hour, minute] = reminder.repeat_time.split(":").map(Number);
+  const nextTime = nextWeeklyTime(reminder.repeat_day, hour, minute);
 
-          await supabase
-            .from("reminders")
-            .update({
-              remind_at: toTaipeiISOString(nextTime),
-              status: "scheduled",
-            })
-            .eq("id", reminder.id);
-        } else {
-          await supabase
-            .from("reminders")
-            .update({
-              status: "reminded",
-            })
-            .eq("id", reminder.id);
-        }
+  await supabase
+    .from("reminders")
+    .update({
+      remind_at: toTaipeiISOString(nextTime),
+      status: "scheduled",
+    })
+    .eq("id", reminder.id);
+
+} else if (reminder.repeat_type === "monthly") {
+  const [hour, minute] = reminder.repeat_time.split(":").map(Number);
+  const nextTime = nextMonthlyTime(reminder.repeat_day, hour, minute);
+
+  await supabase
+    .from("reminders")
+    .update({
+      remind_at: toTaipeiISOString(nextTime),
+      status: "scheduled",
+    })
+    .eq("id", reminder.id);
+
+} else {
+  await supabase
+    .from("reminders")
+    .update({
+      status: "reminded",
+    })
+    .eq("id", reminder.id);
+}
 
         console.log("提醒已發送:", reminder.title, reminder.remind_at);
       } catch (err) {
