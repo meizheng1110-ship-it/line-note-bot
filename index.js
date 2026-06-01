@@ -2291,6 +2291,8 @@ async function queryTodos(replyToken, userId, options = {}) {
   }
 
   const displayItems = occurrences.slice(0, 30);
+  global.futureReminderCache = global.futureReminderCache || {};
+  global.futureReminderCache[userId] = displayItems;
   const text = displayItems
     .map((item, index) => {
       const repeatText = getRepeatLabel(item.repeat_type);
@@ -2832,24 +2834,14 @@ async function deleteTodayReminder(replyToken, userId, number) {
 }
 
 async function deleteFutureReminder(replyToken, userId, number) {
-  const now = new Date().toISOString();
+  const cache = global.futureReminderCache?.[userId];
 
-  const { data, error } = await supabase
-    .from("reminders")
-    .select("*")
-    .eq("line_user_id", userId)
-    .eq("status", "scheduled")
-    .gte("remind_at", now)
-    .order("remind_at", { ascending: true })
-    .limit(50);
-
-  if (error) {
-    console.error(error);
-    await reply(replyToken, "查詢未來提醒失敗，請再試一次");
+  if (!cache || cache.length === 0) {
+    await reply(replyToken, "請先輸入「所有提醒」取得提醒清單，再刪除。");
     return;
   }
 
-  const target = data?.[number - 1];
+  const target = cache[number - 1];
 
   if (!target) {
     await reply(replyToken, "找不到這個未來提醒編號");
@@ -2859,13 +2851,16 @@ async function deleteFutureReminder(replyToken, userId, number) {
   const { error: updateError } = await supabase
     .from("reminders")
     .update({ status: "deleted" })
-    .eq("id", target.id);
+    .eq("id", target.id)
+    .eq("line_user_id", userId);
 
   if (updateError) {
     console.error(updateError);
     await reply(replyToken, "刪除未來提醒失敗，請再試一次");
     return;
   }
+
+  delete global.futureReminderCache[userId];
 
   await reply(replyToken, `已刪除未來提醒：${target.title}`);
 }
