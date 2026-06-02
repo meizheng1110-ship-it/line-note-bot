@@ -2017,37 +2017,42 @@ function parseReminderDateQuery(text) {
 function getReminderSummaryType(title) {
   if (!title) return null;
 
-  if (
-    title.includes("今天待辦") ||
-    title.includes("今日待辦") ||
-    title.includes("今天的待辦") ||
-    title.includes("今日的待辦") ||
-    title.includes("今天的待辦事項") ||
-    title.includes("今日的待辦事項") ||
-    title.includes("當日待辦")
-  ) {
-    return "today";
-  }
+  const text = normalizeInputText(title);
 
   if (
-    title.includes("明天待辦") ||
-    title.includes("明日待辦") ||
-    title.includes("明天的待辦") ||
-    title.includes("明日的待辦") ||
-    title.includes("明天的待辦事項") ||
-    title.includes("明日的待辦事項") ||
-    title.includes("隔日待辦")
+    text.includes("明天") &&
+    (
+      text.includes("待辦") ||
+      text.includes("要做什麼") ||
+      text.includes("有什麼事") ||
+      text.includes("幹嘛")
+    )
   ) {
     return "tomorrow";
   }
 
   if (
-    title.includes("本週待辦") ||
-    title.includes("本周待辦") ||
-    title.includes("這週待辦") ||
-    title.includes("這禮拜待辦")
+    text.includes("今天") &&
+    (
+      text.includes("待辦") ||
+      text.includes("要做什麼") ||
+      text.includes("有什麼事") ||
+      text.includes("幹嘛")
+    )
   ) {
-    return "week";
+    return "today";
+  }
+
+  if (
+    text.includes("本週") ||
+    text.includes("本周") ||
+    text.includes("這週") ||
+    text.includes("這周") ||
+    text.includes("這禮拜")
+  ) {
+    if (text.includes("待辦") || text.includes("要做什麼") || text.includes("有什麼事") || text.includes("幹嘛")) {
+      return "week";
+    }
   }
 
   return null;
@@ -3926,7 +3931,7 @@ cron.schedule("0 * * * * *", async () => {
           pushText = await getTodoSummaryText(reminder.line_user_id, {
             type: "date",
             days: 1,
-            title: "明日待辦",
+            title: "明天待辦事項",
           });
         }
 
