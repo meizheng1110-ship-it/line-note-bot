@@ -2048,10 +2048,6 @@ function getReminderSummaryType(title) {
 
   return null;
 }
-
-  return null;
-}
-
 async function getTodoSummaryText(userId, summary) {
   const range = summary.type === "week"
     ? getReminderWeekRangeUtc()
