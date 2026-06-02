@@ -2019,41 +2019,35 @@ function getReminderSummaryType(title) {
 
   const text = normalizeInputText(title);
 
-  if (
-    text.includes("明天") &&
-    (
-      text.includes("待辦") ||
-      text.includes("要做什麼") ||
-      text.includes("有什麼事") ||
-      text.includes("幹嘛")
-    )
-  ) {
+  const isTodoSummary =
+    text.includes("待辦") ||
+    text.includes("要做什麼") ||
+    text.includes("有什麼事") ||
+    text.includes("幹嘛");
+
+  if (text.includes("明天") && isTodoSummary) {
     return "tomorrow";
   }
 
-  if (
-    text.includes("今天") &&
-    (
-      text.includes("待辦") ||
-      text.includes("要做什麼") ||
-      text.includes("有什麼事") ||
-      text.includes("幹嘛")
-    )
-  ) {
+  if (text.includes("今天") && isTodoSummary) {
     return "today";
   }
 
   if (
-    text.includes("本週") ||
-    text.includes("本周") ||
-    text.includes("這週") ||
-    text.includes("這周") ||
-    text.includes("這禮拜")
+    (
+      text.includes("本週") ||
+      text.includes("本周") ||
+      text.includes("這週") ||
+      text.includes("這周") ||
+      text.includes("這禮拜")
+    ) &&
+    isTodoSummary
   ) {
-    if (text.includes("待辦") || text.includes("要做什麼") || text.includes("有什麼事") || text.includes("幹嘛")) {
-      return "week";
-    }
+    return "week";
   }
+
+  return null;
+}
 
   return null;
 }
