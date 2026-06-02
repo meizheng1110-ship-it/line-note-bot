@@ -311,7 +311,28 @@ async function handleEvent(event) {
       });
       return;
     }
-
+    function isNextWeekTodoIntent(text) {
+      return [
+        "下週提醒",
+        "下周提醒",
+        "下禮拜提醒",
+        "下週待辦",
+        "下周待辦",
+        "下禮拜待辦",
+        "下週待辦事項",
+        "下周待辦事項",
+        "下禮拜待辦事項",
+      ].includes(text);
+    }
+    if (isNextWeekTodoIntent(normalizedText)) {
+      await queryTodos(event.replyToken, userId, {
+        range: "next_week",
+        keyword: null,
+        count_only: false,
+        title: "下週待辦",
+      });
+      return;
+    }
     if (isWeekTodoIntent(normalizedText)) {
       await queryTodos(event.replyToken, userId, {
         range: "week",
@@ -1352,9 +1373,23 @@ function isWeekTodoIntent(text) {
     "這週待辦",
     "這周待辦",
     "這禮拜待辦",
+    "本週待辦事項",
+    "本周待辦事項",
+    "這週待辦事項",
+    "這周待辦事項",
+    "這禮拜待辦事項",
   ].includes(text);
 }
-
+function isNextWeekTodoIntent(text) {
+  return [
+    "下週待辦",
+    "下周待辦",
+    "下禮拜待辦",
+    "下週待辦事項",
+    "下周待辦事項",
+    "下禮拜待辦事項",
+  ].includes(text);
+}
 function isMonthTodoIntent(text) {
   return [
     "本月提醒",
@@ -1774,7 +1809,7 @@ unknown
 JSON 格式：
 {
   "intent": "query_todo|query_future_reminders|query_reminder_history|query_work_report|create_work_report|delete_reminder|update_reminder|unknown",
-  "range": "today|tomorrow|week|month|future|null",
+  "range": "today|tomorrow|week|next_week|month|future|null",
   "work_type": null,
   "content": null,
   "keyword": null,
@@ -1819,6 +1854,7 @@ JSON 格式：
 - 「我今天有幾個會勘」= query_todo, range=today, keyword=會勘, count_only=true。
 - 「我今天喝幾次水」= query_todo, range=today, keyword=喝水, count_only=true。
 - 「我今天還有幾個會要開」= query_todo, range=today, keyword=開會, count_only=true。
+- 「下週待辦、下周待辦、下禮拜待辦、下週要做什麼、下周要幹嘛」= query_todo, range=next_week, keyword=null。
 
 提醒紀錄查詢：
 - 「我今天做了什麼、今天做了什麼、今天提醒過什麼、今天有哪些紀錄」= query_reminder_history, range=today。
@@ -2035,6 +2071,17 @@ function getReminderSummaryType(title) {
 
   if (
     (
+      text.includes("下週") ||
+      text.includes("下周") ||
+      text.includes("下禮拜")
+    ) &&
+    isTodoSummary
+  ) {
+    return "next_week";
+  }
+
+  if (
+    (
       text.includes("本週") ||
       text.includes("本周") ||
       text.includes("這週") ||
@@ -2049,10 +2096,15 @@ function getReminderSummaryType(title) {
   return null;
 }
 async function getTodoSummaryText(userId, summary) {
-  const range = summary.type === "week"
-    ? getReminderWeekRangeUtc()
-    : getDateRangeUtc(summary.days);
+  let range;
 
+  if (summary.type === "week") {
+    range = getReminderWeekRangeUtc();
+  } else if (summary.type === "next_week") {
+    range = getTodoQueryRangeUtc("next_week");
+  } else {
+    range = getDateRangeUtc(summary.days);
+  }
   const { data, error } = await supabase
     .from("reminders")
     .select("*")
@@ -2266,12 +2318,13 @@ async function queryTodos(replyToken, userId, options = {}) {
   });
 
   const titleMap = {
-    today: "今日待辦",
-    tomorrow: "明日待辦",
-    week: "本週待辦",
-    month: "本月待辦",
-    future: "未來待辦",
-  };
+  today: "今日待辦",
+  tomorrow: "明日待辦",
+  week: "本週待辦",
+  next_week: "下週待辦",
+  month: "本月待辦",
+  future: "未來待辦",
+};
 
   const title = options.title || titleMap[rangeName] || "待辦";
 
@@ -2326,17 +2379,29 @@ function getTodoQueryRangeUtc(rangeName) {
   if (rangeName === "tomorrow") {
     startTaipei = new Date(Date.UTC(y, m, d + 1, 0, 0, 0));
     endTaipei = new Date(Date.UTC(y, m, d + 2, 0, 0, 0));
+
   } else if (rangeName === "week") {
     const dayOfWeek = taipeiNow.getUTCDay();
     const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
     startTaipei = new Date(Date.UTC(y, m, d + diffToMonday, 0, 0, 0));
     endTaipei = new Date(Date.UTC(y, m, d + diffToMonday + 7, 0, 0, 0));
+
+  } else if (rangeName === "next_week") {
+    const dayOfWeek = taipeiNow.getUTCDay();
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+    startTaipei = new Date(Date.UTC(y, m, d + diffToMonday + 7, 0, 0, 0));
+    endTaipei = new Date(Date.UTC(y, m, d + diffToMonday + 14, 0, 0, 0));
+
   } else if (rangeName === "month") {
     startTaipei = new Date(Date.UTC(y, m, 1, 0, 0, 0));
     endTaipei = new Date(Date.UTC(y, m + 1, 1, 0, 0, 0));
+
   } else if (rangeName === "future") {
     startTaipei = taipeiNow;
     endTaipei = new Date(taipeiNow.getTime() + 365 * 24 * 60 * 60 * 1000);
+
   } else {
     startTaipei = new Date(Date.UTC(y, m, d, 0, 0, 0));
     endTaipei = new Date(Date.UTC(y, m, d + 1, 0, 0, 0));
@@ -2348,7 +2413,6 @@ function getTodoQueryRangeUtc(rangeName) {
     rangeName,
   };
 }
-
 function buildTodoOccurrences(reminders, range, rangeName) {
   const start = new Date(range.startUtc);
   const end = new Date(range.endUtc);
@@ -3929,6 +3993,13 @@ cron.schedule("0 * * * * *", async () => {
           pushText = await getTodoSummaryText(reminder.line_user_id, {
             type: "week",
             title: "本週待辦",
+          });
+        }
+
+        if (reminder.summary_type === "next_week") {
+          pushText = await getTodoSummaryText(reminder.line_user_id, {
+            type: "next_week",
+            title: "下週待辦",
           });
         }
 
