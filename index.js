@@ -3993,6 +3993,11 @@ cron.schedule("0 * * * * *", async () => {
         if (!claimedRows || claimedRows.length === 0) {
           continue;
         }
+        await logReminder(
+          reminder,
+          "processing",
+          `開始處理提醒：${reminder.title}`
+        );
 
         let pushText = `提醒你：${reminder.title}`;
 
