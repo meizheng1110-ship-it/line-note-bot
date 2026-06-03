@@ -1809,7 +1809,7 @@ unknown
 JSON 格式：
 {
   "intent": "query_todo|query_future_reminders|query_reminder_history|query_work_report|create_work_report|delete_reminder|update_reminder|unknown",
-  "range": "today|tomorrow|week|next_week|month|future|null",
+  "range": "today|tomorrow|week|next_week|next_monthmonth|future|null",
   "work_type": null,
   "content": null,
   "keyword": null,
@@ -1855,7 +1855,7 @@ JSON 格式：
 - 「我今天喝幾次水」= query_todo, range=today, keyword=喝水, count_only=true。
 - 「我今天還有幾個會要開」= query_todo, range=today, keyword=開會, count_only=true。
 - 「下週待辦、下周待辦、下禮拜待辦、下週要做什麼、下周要幹嘛」= query_todo, range=next_week, keyword=null。
-
+- 「下個月待辦、下月待辦、下個月要做什麼」= query_todo, range=next_month, keyword=null。
 提醒紀錄查詢：
 - 「我今天做了什麼、今天做了什麼、今天提醒過什麼、今天有哪些紀錄」= query_reminder_history, range=today。
 - 「這週做了什麼、本週做了什麼、這禮拜做了什麼」= query_reminder_history, range=week。
@@ -2332,6 +2332,7 @@ async function queryTodos(replyToken, userId, options = {}) {
   next_week: "下週待辦",
   month: "本月待辦",
   future: "未來待辦",
+  next_month: "下個月待辦",
 };
 
   const title = options.title || titleMap[rangeName] || "待辦";
@@ -2405,6 +2406,9 @@ function getTodoQueryRangeUtc(rangeName) {
   } else if (rangeName === "month") {
     startTaipei = new Date(Date.UTC(y, m, 1, 0, 0, 0));
     endTaipei = new Date(Date.UTC(y, m + 1, 1, 0, 0, 0));
+  } else if (rangeName === "next_month") {
+    startTaipei = new Date(Date.UTC(y, m + 1, 1, 0, 0, 0));
+    endTaipei = new Date(Date.UTC(y, m + 2, 1, 0, 0, 0));
 
   } else if (rangeName === "future") {
     startTaipei = taipeiNow;
