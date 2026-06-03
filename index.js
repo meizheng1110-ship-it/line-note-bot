@@ -1809,7 +1809,7 @@ unknown
 JSON 格式：
 {
   "intent": "query_todo|query_future_reminders|query_reminder_history|query_work_report|create_work_report|delete_reminder|update_reminder|unknown",
-  "range": "today|tomorrow|week|next_week|next_monthmonth|future|null",
+  "range": "today|tomorrow|week|next_week|month|next_month|future|null",
   "work_type": null,
   "content": null,
   "keyword": null,
@@ -3922,7 +3922,18 @@ async function reply(replyToken, text) {
     ],
   });
 }
-
+async function logReminder(reminder, action, message = "") {
+  try {
+    await supabase.from("reminder_logs").insert({
+      reminder_id: reminder.id,
+      line_user_id: reminder.line_user_id,
+      action,
+      message,
+    });
+  } catch (error) {
+    console.error("LOG REMINDER ERROR:", error);
+  }
+}
 
 const processingReminderIds = new Set();
 
@@ -4034,6 +4045,7 @@ cron.schedule("0 * * * * *", async () => {
     .update({
       remind_at: toTaipeiISOString(nextTime),
       status: "scheduled",
+      last_sent_at: new Date().toISOString(),
     })
     .eq("id", reminder.id);
 
@@ -4046,6 +4058,7 @@ cron.schedule("0 * * * * *", async () => {
     .update({
       remind_at: toTaipeiISOString(nextTime),
       status: "scheduled",
+      last_sent_at: new Date().toISOString(),
     })
     .eq("id", reminder.id);
 
@@ -4058,6 +4071,7 @@ cron.schedule("0 * * * * *", async () => {
     .update({
       remind_at: toTaipeiISOString(nextTime),
       status: "scheduled",
+      last_sent_at: new Date().toISOString(),
     })
     .eq("id", reminder.id);
 
@@ -4066,25 +4080,30 @@ cron.schedule("0 * * * * *", async () => {
     .from("reminders")
     .update({
       status: "reminded",
+      last_sent_at: new Date().toISOString(),
     })
     .eq("id", reminder.id);
 }
 
+        await logReminder(reminder, "sent", `提醒已發送：${reminder.title}`);
         console.log("提醒已發送:", reminder.title, reminder.remind_at);
+
       } catch (err) {
-          console.error("PUSH MESSAGE ERROR FULL:", err);
+        console.error("PUSH MESSAGE ERROR FULL:", err);
 
-          if (err.response) {
-            console.error("LINE RESPONSE:", err.response.data);
-          }
-
-          await supabase
-            .from("reminders")
-            .update({
-              status: "push_failed",
-            })
-            .eq("id", reminder.id);
+        if (err.response) {
+          console.error("LINE RESPONSE:", err.response.data);
         }
+
+        await logReminder(reminder, "failed", String(err?.message || err));
+
+        await supabase
+          .from("reminders")
+          .update({
+            status: "push_failed",
+          })
+          .eq("id", reminder.id);
+      }
     }
   } catch (err) {
     console.error("CRON ERROR:", err);
