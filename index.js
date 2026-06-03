@@ -2061,9 +2061,17 @@ function getReminderSummaryType(title) {
     text.includes("有什麼事") ||
     text.includes("幹嘛");
 
-  if (text.includes("明天") && isTodoSummary) {
-    return "tomorrow";
-  }
+  if (
+  (
+    text.includes("明天") ||
+    text.includes("明日") ||
+    text.includes("隔天") ||
+    text.includes("隔日")
+  ) &&
+  isTodoSummary
+) {
+  return "tomorrow";
+}
 
   if (text.includes("今天") && isTodoSummary) {
     return "today";
