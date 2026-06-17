@@ -544,18 +544,21 @@ async function createReminderFromText(replyToken, userId, userText) {
   }
 
   const summaryType = getReminderSummaryType(result.title);
+  const finalTitle = summaryType
+    ? getSummaryReminderTitle(summaryType)
+    : result.title;
 
-  const { error } = await supabase.from("reminders").insert({
-    line_user_id: userId,
-    raw_text: userText,
-    title: result.title,
-    remind_at: result.time,
-    status: "scheduled",
-    repeat_type: result.repeat_type || "none",
-    repeat_time: result.repeat_time || null,
-    repeat_day: result.repeat_day || null,
-    summary_type: summaryType,
-  });
+const { error } = await supabase.from("reminders").insert({
+  line_user_id: userId,
+  raw_text: userText,
+  title: finalTitle,     // ← 改這裡
+  remind_at: result.time,
+  status: "scheduled",
+  repeat_type: result.repeat_type || "none",
+  repeat_time: result.repeat_time || null,
+  repeat_day: result.repeat_day || null,
+  summary_type: summaryType,
+});
 
   if (error) throw error;
 
@@ -2120,6 +2123,7 @@ async function getTodoSummaryText(userId, summary) {
     .eq("line_user_id", userId)
     .eq("status", "scheduled")
     .is("summary_type", null)
+    .eq("repeat_type", "none")
     .gte("remind_at", range.startUtc)
     .lt("remind_at", range.endUtc)
     .order("remind_at", { ascending: true });
@@ -2304,9 +2308,15 @@ async function queryTodos(replyToken, userId, options = {}) {
 
   let occurrences = buildTodoOccurrences(data || [], range, rangeName);
 
-  if (rangeName === "today" || rangeName === "tomorrow") {
-    occurrences = occurrences.filter((item) => (item.repeat_type || "none") === "none");
-  }
+  occurrences = occurrences.filter((item) => {
+    if (item.summary_type) return false;
+
+    if (rangeName === "today" || rangeName === "tomorrow") {
+      return (item.repeat_type || "none") === "none";
+    }
+
+    return true;
+  });
 
   if (keyword) {
     occurrences = occurrences.filter((item) =>
@@ -2869,14 +2879,14 @@ async function deleteTodayReminder(replyToken, userId, number) {
   const { startUtc, endUtc } = getTodayRangeUtc();
 
   const { data, error } = await supabase
-    .from("reminders")
-    .select("*")
-    .eq("line_user_id", userId)
-    .eq("status", "scheduled")
-    .gte("remind_at", startUtc)
-    .lt("remind_at", endUtc)
-    .order("remind_at", { ascending: true })
-    .limit(10);
+  .from("reminders")
+  .select("*")
+  .eq("line_user_id", userId)
+  .eq("status", "scheduled")
+  .is("summary_type", null)
+  .eq("repeat_type", "none")
+  .gte("remind_at", startUtc)
+  .lt("remind_at", endUtc)
 
   if (error) {
     console.error(error);
