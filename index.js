@@ -2056,11 +2056,12 @@ function getReminderSummaryType(title) {
   const text = normalizeInputText(title);
 
   const isTodoSummary =
-    text.includes("待辦") ||
-    text.includes("要做什麼") ||
-    text.includes("有什麼事") ||
-    text.includes("幹嘛");
-
+  text.includes("待辦") ||
+  text.includes("代辦") ||
+  text.includes("事項") ||
+  text.includes("要做什麼") ||
+  text.includes("有什麼事") ||
+  text.includes("幹嘛");
   if (
   (
     text.includes("明天") ||
@@ -2073,9 +2074,9 @@ function getReminderSummaryType(title) {
   return "tomorrow";
 }
 
-  if (text.includes("今天") && isTodoSummary) {
-    return "today";
-  }
+  if ((text.includes("今天") || text.includes("今日")) && isTodoSummary) {
+  return "today";
+}
 
   if (
     (
