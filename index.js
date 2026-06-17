@@ -4040,7 +4040,23 @@ cron.schedule("0 * * * * *", async () => {
             },
           ],
         });
+        if (
+          ["daily", "weekly", "monthly"].includes(reminder.repeat_type) &&
+          !reminder.repeat_time
+        ) {
+          await logReminder(
+            reminder,
+            "failed",
+            `例行提醒缺少 repeat_time：${reminder.title}`
+          );
 
+          await supabase
+            .from("reminders")
+            .update({ status: "push_failed" })
+            .eq("id", reminder.id);
+
+          continue;
+        }
         if (reminder.repeat_type === "daily") {
   const [hour, minute] = reminder.repeat_time.split(":").map(Number);
   const nextTime = nextTaipeiTime(hour, minute);
