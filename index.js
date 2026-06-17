@@ -2107,6 +2107,13 @@ function getReminderSummaryType(title) {
 
   return null;
 }
+function getSummaryReminderTitle(summaryType) {
+  if (summaryType === "today") return "今日待辦摘要";
+  if (summaryType === "tomorrow") return "明日待辦摘要";
+  if (summaryType === "week") return "本週待辦摘要";
+  if (summaryType === "next_week") return "下週待辦摘要";
+  return "待辦摘要";
+}
 async function getTodoSummaryText(userId, summary) {
   let range;
 
