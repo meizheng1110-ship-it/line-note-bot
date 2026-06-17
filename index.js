@@ -543,15 +543,12 @@ async function createReminderFromText(replyToken, userId, userText) {
     return;
   }
 
-  const summaryType = getReminderSummaryType(result.title);
-  const finalTitle = summaryType
-    ? getSummaryReminderTitle(summaryType)
-    : result.title;
+ const summaryType = getReminderSummaryType(result.title);
 
 const { error } = await supabase.from("reminders").insert({
   line_user_id: userId,
   raw_text: userText,
-  title: finalTitle,     // ← 改這裡
+  title: result.title,
   remind_at: result.time,
   status: "scheduled",
   repeat_type: result.repeat_type || "none",
