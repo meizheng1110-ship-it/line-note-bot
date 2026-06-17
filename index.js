@@ -1556,6 +1556,30 @@ function cleanReminderTitle(title) {
 }
 
 function parseDailyReminder(text) {
+  const colonMatch = text.match(
+  /(?:每天|每日)\s*(早上|上午|中午|下午|晚上)?\s*([0-9]{1,2})\s*:\s*([0-9]{1,2})\s*(.*)/
+);
+
+if (colonMatch) {
+  const period = colonMatch[1] || "";
+  let hour = Number(colonMatch[2]);
+  const minute = Number(colonMatch[3]);
+  const title = cleanReminderTitle(colonMatch[4]);
+
+  if (!title) return null;
+
+  hour = convertTo24Hour(period, hour);
+
+  const remindAt = nextTaipeiTime(hour, minute);
+
+  return {
+    title,
+    time: toTaipeiISOString(remindAt),
+    repeat_type: "daily",
+    repeat_time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+    repeat_day: null,
+  };
+}
   const match = text.match(
     /(?:每天|每日)\s*(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十百]+)\s*點\s*(?:([0-9一二兩三四五六七八九十百]+)\s*分?|半)?\s*(.*)/
   );
