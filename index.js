@@ -114,9 +114,14 @@ async function handleEvent(event) {
 
       const reminder = data[0];
 
-      await client.pushMessage(userId, {
-        type: "text",
-        text: `【TEST 測試推播】\n提醒事項：${reminder.title}`,
+      await client.pushMessage({
+        to: userId,
+        messages: [
+          {
+            type: "text",
+            text: `【TEST 測試推播】\n提醒事項：${reminder.title}`,
+          },
+        ],
       });
 
       await reply(event.replyToken, "已送出 TEST 測試推播 ✅");
