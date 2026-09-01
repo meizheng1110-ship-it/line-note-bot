@@ -84,8 +84,45 @@ async function handleEvent(event) {
 
     const userText = event.message.text.trim();
     const normalizedText = normalizeInputText(userText);
+    if (
+      process.env.APP_ENV === "test" &&
+      normalizedText === "測試推播"
+    ) {
+      const userId =
+        event.source.userId ||
+        event.source.groupId ||
+        event.source.roomId;
 
-    // 報表功能入口：放在最前面，命中才進入，不會拖慢其他功能
+      const { data, error } = await supabase
+        .from("reminders")
+        .select("*")
+        .eq("line_user_id", userId)
+        .eq("status", "scheduled")
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (error) {
+        console.error("TEST PUSH QUERY ERROR:", error);
+        await reply(event.replyToken, "測試推播查詢失敗");
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        await reply(event.replyToken, "目前沒有可測試的提醒");
+        return;
+      }
+
+      const reminder = data[0];
+
+      await client.pushMessage(userId, {
+        type: "text",
+        text: `【TEST 測試推播】\n提醒事項：${reminder.title}`,
+      });
+
+      await reply(event.replyToken, "已送出 TEST 測試推播 ✅");
+      return;
+    }
+        // 報表功能入口：放在最前面，命中才進入，不會拖慢其他功能
     if (normalizedText === "建立檢查表") {
   await client.replyMessage({
     replyToken: event.replyToken,
