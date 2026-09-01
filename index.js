@@ -4023,7 +4023,7 @@ function isLineMonthlyLimitError(error) {
   const body = JSON.stringify(error?.body || error?.response?.data || error || "");
   return status === 429 || body.includes("monthly limit") || body.includes("Too Many Requests");
 }
-if (process.env.APP_ENV !== "test") {
+if (process.env.ENABLE_REMINDER_CRON === "true") {
 cron.schedule("0 * * * * *", async () => {
   console.log("CRON RUNNING:", new Date().toISOString());
 
@@ -4212,7 +4212,7 @@ cron.schedule("0 * * * * *", async () => {
   }
 });
 } else {
-  console.log("TEST MODE: reminder cron disabled");
+  console.log("REMINDER CRON DISABLED");
 }
 const port = process.env.PORT || 3000;
 
