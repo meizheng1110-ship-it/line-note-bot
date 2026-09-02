@@ -563,10 +563,29 @@ if (isReminderCreationText) {
     }
 
     await createReminderFromText(event.replyToken, userId, userText);
-  } catch (error) {
-    console.error(error);
-    await reply(event.replyToken, "解析失敗，請再試一次");
+
+} catch (error) {
+  console.error("HANDLE EVENT ERROR FULL:", error);
+
+  console.error("ERROR NAME:", error?.name);
+  console.error("ERROR MESSAGE:", error?.message);
+  console.error("ERROR STATUS:", error?.status || error?.response?.status);
+
+  if (error?.response?.data) {
+    console.error("ERROR RESPONSE DATA:", error.response.data);
   }
+
+  if (error?.body) {
+    console.error("ERROR BODY:", error.body);
+  }
+
+  await reply(
+    event.replyToken,
+    process.env.APP_ENV === "test"
+      ? `處理失敗：${error?.message || "未知錯誤"}`
+      : "處理失敗，請再試一次"
+  );
+}
 }
 
 async function createReminderFromText(replyToken, userId, userText) {
@@ -599,13 +618,16 @@ const { error } = await supabase.from("reminders").insert({
   summary_type: summaryType,
 });
 
-  if (error) throw error;
+  if (error) {
+  console.error("CREATE REMINDER SUPABASE ERROR:", error);
 
-  await reply(
-    replyToken,
-    `已建立提醒 ✅\n提醒事項：${result.title}\n提醒時間：${formatTaipeiTime(result.time)}` +
-      getRepeatText(result)
+  const dbError = new Error(
+    `Supabase 建立提醒失敗：${error.message || "unknown error"}`
   );
+
+  dbError.cause = error;
+  throw dbError;
+}
 }
 
 const WORK_REPORT_TYPES = [
