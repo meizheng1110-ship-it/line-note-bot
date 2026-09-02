@@ -628,6 +628,12 @@ const { error } = await supabase.from("reminders").insert({
   dbError.cause = error;
   throw dbError;
 }
+
+await reply(
+  replyToken,
+  `已建立提醒 ✅\n提醒事項：${result.title}\n提醒時間：${formatTaipeiTime(result.time)}` +
+    getRepeatText(result)
+);
 }
 
 const WORK_REPORT_TYPES = [
