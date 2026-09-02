@@ -1686,11 +1686,10 @@ if (colonMatch) {
 }
 
 function parseWeeklyReminder(text) {
-  const match = text.match(
-    /(?:每週|每周|每星期|每禮拜)\s*([一二三四五六日天1234567])\s*(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十百]+)?\s*點?\s*(?:(半)|([0-9一二兩三四五六七八九十百]+)\s*分?)?\s*(.*)/
+  // 先支援 11:35 這種格式
+  const colonMatch = text.match(
+    /(?:每週|每周|每星期|每禮拜)\s*([一二三四五六日天1234567])\s*(早上|上午|中午|下午|晚上)?\s*([0-9]{1,2})\s*:\s*([0-9]{1,2})\s*(.*)/
   );
-
-  if (!match) return null;
 
   const weekMap = {
     一: 1,
@@ -1710,20 +1709,67 @@ function parseWeeklyReminder(text) {
     "7": 0,
   };
 
-  const repeatDay = weekMap[match[1]];
-  const period = match[2] || "";
-  let hour = match[3] ? parseNumberText(match[3]) : 9;
+  if (colonMatch) {
+    const repeatDay = weekMap[colonMatch[1]];
+    const period = colonMatch[2] || "";
+    let hour = Number(colonMatch[3]);
+    const minute = Number(colonMatch[4]);
+    const title = cleanReminderTitle(colonMatch[5]);
 
-  let minute = 0;
-  if (match[4]) {
-    minute = 30;
-  } else if (match[5]) {
-    minute = parseNumberText(match[5]);
+    if (
+      repeatDay === undefined ||
+      hour === null ||
+      hour === undefined ||
+      minute === null ||
+      minute === undefined ||
+      !title
+    ) {
+      return null;
+    }
+
+    hour = convertTo24Hour(period, hour);
+
+    const remindAt = nextWeeklyTime(repeatDay, hour, minute);
+
+    return {
+      title,
+      time: toTaipeiISOString(remindAt),
+      repeat_type: "weekly",
+      repeat_time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+      repeat_day: repeatDay,
+    };
   }
 
-  const title = cleanReminderTitle(match[6]);
+  // 再處理 11點、11點35分、11點半
+  const match = text.match(
+    /(?:每週|每周|每星期|每禮拜)\s*([一二三四五六日天1234567])\s*(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十百]+)\s*點\s*(?:([0-9一二兩三四五六七八九十百]+)\s*分?|半)?\s*(.*)/
+  );
 
-  if (repeatDay === undefined || hour === null || hour === undefined || !title) return null;
+  if (!match) return null;
+
+  const repeatDay = weekMap[match[1]];
+  const period = match[2] || "";
+  let hour = parseNumberText(match[3]);
+
+  let minute = 0;
+
+  if (text.includes("半")) {
+    minute = 30;
+  } else if (match[4]) {
+    minute = parseNumberText(match[4]);
+  }
+
+  const title = cleanReminderTitle(match[5]);
+
+  if (
+    repeatDay === undefined ||
+    hour === null ||
+    hour === undefined ||
+    !title
+  ) {
+    return null;
+  }
+
   if (minute === null || minute === undefined) return null;
 
   hour = convertTo24Hour(period, hour);
