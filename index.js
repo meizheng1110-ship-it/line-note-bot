@@ -4015,15 +4015,39 @@ async function replySafetyPhotoChoice(replyToken) {
   });
 }
 async function reply(replyToken, text) {
-  await client.replyMessage({
-    replyToken,
-    messages: [
-      {
-        type: "text",
-        text,
-      },
-    ],
-  });
+  try {
+    console.log("LINE REPLY START:", text);
+
+    await client.replyMessage({
+      replyToken,
+      messages: [
+        {
+          type: "text",
+          text,
+        },
+      ],
+    });
+
+    console.log("LINE REPLY SUCCESS");
+  } catch (error) {
+    console.error("LINE REPLY ERROR FULL:", error);
+    console.error("LINE REPLY ERROR MESSAGE:", error?.message);
+    console.error(
+      "LINE REPLY ERROR STATUS:",
+      error?.status || error?.response?.status
+    );
+
+    if (error?.body) {
+      console.error("LINE REPLY ERROR BODY:", error.body);
+    }
+
+    if (error?.response?.data) {
+      console.error("LINE REPLY RESPONSE DATA:", error.response.data);
+    }
+
+    throw error;
+  }
+
 }
 async function logReminder(reminder, action, message = "") {
   try {
