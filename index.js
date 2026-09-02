@@ -1786,24 +1786,55 @@ function parseWeeklyReminder(text) {
 }
 
 function parseMonthlyReminder(text) {
+  // 先支援 12:05 這種格式
+  const colonMatch = text.match(
+    /(?:每個月|每月)\s*的?\s*([0-9一二兩三四五六七八九十]+)\s*(?:號|日)?\s*(早上|上午|中午|下午|晚上)?\s*([0-9]{1,2})\s*:\s*([0-9]{1,2})\s*(.*)/
+  );
+
+  if (colonMatch) {
+    const repeatDay = parseNumberText(colonMatch[1]);
+    const period = colonMatch[2] || "";
+    let hour = Number(colonMatch[3]);
+    const minute = Number(colonMatch[4]);
+    const title = cleanReminderTitle(colonMatch[5]);
+
+    if (!repeatDay || repeatDay < 1 || repeatDay > 31) return null;
+    if (hour === null || hour === undefined || !title) return null;
+    if (minute === null || minute === undefined) return null;
+
+    hour = convertTo24Hour(period, hour);
+
+    const remindAt = nextMonthlyTime(repeatDay, hour, minute);
+
+    return {
+      title,
+      time: toTaipeiISOString(remindAt),
+      repeat_type: "monthly",
+      repeat_time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+      repeat_day: repeatDay,
+    };
+  }
+
+  // 再處理 12點、12點05分、12點半
   const match = text.match(
-    /(?:每個月|每月)\s*的?\s*([0-9一二兩三四五六七八九十百]+)\s*(?:號|日)?\s*(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十百]+)?\s*點?\s*(?:(半)|([0-9一二兩三四五六七八九十百]+)\s*分?)?\s*(.*)/
+    /(?:每個月|每月)\s*的?\s*([0-9一二兩三四五六七八九十]+)\s*(?:號|日)?\s*(早上|上午|中午|下午|晚上)?\s*([0-9一二兩三四五六七八九十百]+)\s*點\s*(?:([0-9一二兩三四五六七八九十百]+)\s*分?|半)?\s*(.*)/
   );
 
   if (!match) return null;
 
   const repeatDay = parseNumberText(match[1]);
   const period = match[2] || "";
-  let hour = match[3] ? parseNumberText(match[3]) : 9;
+  let hour = parseNumberText(match[3]);
 
   let minute = 0;
-  if (match[4]) {
+
+  if (text.includes("半")) {
     minute = 30;
-  } else if (match[5]) {
-    minute = parseNumberText(match[5]);
+  } else if (match[4]) {
+    minute = parseNumberText(match[4]);
   }
 
-  const title = cleanReminderTitle(match[6]);
+  const title = cleanReminderTitle(match[5]);
 
   if (!repeatDay || repeatDay < 1 || repeatDay > 31) return null;
   if (hour === null || hour === undefined || !title) return null;
